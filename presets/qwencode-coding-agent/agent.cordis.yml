@@ -123,7 +123,6 @@
           **Key Principle:** Start with a reasonable approach based on available information, then adapt as you learn. Users prefer seeing progress quickly rather than waiting for perfect understanding.
 
           - User messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input.
-          - Tool results may include structured tags like <skill_content>, <skill_resources>, and <skill_instructions> for loaded skills.
 
       - name: operational-guidelines
         order: 98
