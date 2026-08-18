@@ -44,6 +44,7 @@ async function installPreset(id) {
   const source = join(sourceRoot, id)
   const target = join(dshHome(), '.agent-presets', id)
   const owner = await readOwner(target)
+  let isUpdate = false
 
   if (await exists(target)) {
     if (owner?.package === PACKAGE_NAME) {
@@ -53,6 +54,7 @@ async function installPreset(id) {
         return
       } else {
         console.info(`[${PACKAGE_NAME}] updating preset "${id}" from v${owner.version} to v${PACKAGE_VERSION}`)
+        isUpdate = true
       }
     } else {
       // 不是本包管理的，跳过并警告
@@ -71,7 +73,7 @@ async function installPreset(id) {
   }, null, 2)}\n`, 'utf8')
   await rm(target, { recursive: true, force: true })
   await rename(temporary, target)
-  console.info(`[${PACKAGE_NAME}] installed preset "${id}" at ${target}`)
+  console.info(`[${PACKAGE_NAME}] ${isUpdate ? 'updated' : 'installed'} preset "${id}" at ${target}`)
 }
 
 async function cleanupObsoletePresets(currentIds) {
