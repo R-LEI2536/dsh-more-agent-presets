@@ -1,4 +1,4 @@
-# dsh-more-agentpresets
+# dsh-more-agent-presets
 
 [English](README.md)
 
@@ -87,7 +87,7 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 ```bash
 # 移除插件包
-dsh plugin --profile web remove dsh-more-agentpresets
+dsh plugin --profile web remove dsh-more-agent-presets
 
 # 可选：删除已安装的 preset 目录
 rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent

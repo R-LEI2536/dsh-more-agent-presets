@@ -1,5 +1,5 @@
 {
-  "name": "dsh-more-agentpresets",
+  "name": "dsh-more-agent-presets",
   "version": "1.1.0",
   "description": "多个可选择的 DeepSeek Harness Agent Presets 集合",
   "type": "module",
@@ -25,11 +25,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/R-LEI2536/dsh-more-agentpresets.git"
+    "url": "git+https://github.com/R-LEI2536/dsh-more-agent-presets.git"
   },
-  "homepage": "https://github.com/R-LEI2536/dsh-more-agentpresets#readme",
+  "homepage": "https://github.com/R-LEI2536/dsh-more-agent-presets#readme",
   "bugs": {
-    "url": "https://github.com/R-LEI2536/dsh-more-agentpresets/issues"
+    "url": "https://github.com/R-LEI2536/dsh-more-agent-presets/issues"
   },
   "keywords": [
     "deepseek-harness",

@@ -1,4 +1,4 @@
-# dsh-more-agentpresets
+# dsh-more-agent-presets
 
 [中文文档](README.zh.md)
 
@@ -87,7 +87,7 @@ The plugin implements the following installation logic:
 
 ```bash
 # Remove the plugin package
-dsh plugin --profile web remove dsh-more-agentpresets
+dsh plugin --profile web remove dsh-more-agent-presets
 
 # Optionally, remove the installed presets
 rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
