@@ -1,0 +1,44 @@
+{
+  "name": "dsh-more-agentpresets",
+  "version": "1.0.0",
+  "description": "多个可选择的 DeepSeek Harness Agent Presets 集合",
+  "type": "module",
+  "main": "./index.mjs",
+  "exports": {
+    ".": "./index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.mjs",
+    "cordis.patch.yml",
+    "presets",
+    "README.md",
+    "README.zh.md",
+    "NOTICE.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/R-LEI2536/dsh-more-agentpresets.git"
+  },
+  "homepage": "https://github.com/R-LEI2536/dsh-more-agentpresets#readme",
+  "bugs": {
+    "url": "https://github.com/R-LEI2536/dsh-more-agentpresets/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "agent-preset",
+    "coding-agent",
+    "qwencode",
+    "codex"
+  ],
+  "license": "MIT"
+}
