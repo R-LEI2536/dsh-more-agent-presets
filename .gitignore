@@ -49,3 +49,6 @@ coverage/
 
 # Documentation (not needed in npm package)
 PUBLISH-CHECKLIST.md
+
+# Reference files
+ref/
