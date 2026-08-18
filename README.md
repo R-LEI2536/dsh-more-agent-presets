@@ -4,13 +4,13 @@ Multiple selectable Agent Presets for DeepSeek Harness.
 
 ## Available Presets
 
-### Qwen Code Programming Mode (`qwencode-coding-agent`)
+### Qwen Code Coding Mode (`qwencode-coding-agent`)
 
 A professional coding assistant emphasizing code standards and project conventions, using iterative workflows and CLI-friendly interaction style.
 
 ### Coming Soon
 
-- IFlow Programming Mode (`iflow-coding-agent`) - Coming in future releases
+- IFlow Coding Mode (`iflow-coding-agent`) - Coming in future releases
 
 ## Install
 
