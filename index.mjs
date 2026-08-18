@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -6,7 +7,8 @@ import { fileURLToPath } from 'node:url'
 export const name = 'dsh-more-agentpresets-installer'
 
 const PACKAGE_NAME = 'dsh-more-agentpresets'
-const PACKAGE_VERSION = '1.1.0'
+const packageJson = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+const PACKAGE_VERSION = packageJson.version
 const sourceRoot = fileURLToPath(new URL('./presets/', import.meta.url))
 
 function dshHome() {
