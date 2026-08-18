@@ -2,6 +2,8 @@
 
 Multiple selectable Agent Presets for DeepSeek Harness.
 
+The presets are adapted for DeepSeek Harness (DSH).
+
 ## Available Presets
 
 ### Qwen Code Coding Mode (`qwencode-coding-agent`)
@@ -11,6 +13,20 @@ A professional coding assistant emphasizing code standards and project conventio
 ### Coming Soon
 
 - IFlow Coding Mode (`iflow-coding-agent`) - Coming in future releases
+
+## Design Philosophy
+
+These presets differ from the default DSH prompt in their approach to user interaction and planning:
+
+**Interaction Style:**
+
+- Default DSH: Works independently with minimal user interaction
+- Qwen/IFlow: Actively discusses with users, maintaining communication throughout
+
+**Plan Mode:**
+
+- Default DSH: Static approval process — AI produces a complete plan document, then waits for user approval
+- Qwen/IFlow: Dynamic collaboration — AI iterates with the user through multiple rounds, refining the plan step by step
 
 ## Install
 

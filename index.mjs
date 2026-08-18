@@ -39,7 +39,12 @@ async function installPreset(id) {
   const owner = await readOwner(target)
 
   if (await exists(target)) {
-    if (owner?.package !== PACKAGE_NAME) {
+    if (owner?.package === PACKAGE_NAME) {
+      // 已由本包安装，跳过
+      console.info(`[${PACKAGE_NAME}] preset "${id}" already installed, skipping`)
+      return
+    } else {
+      // 不是本包管理的，跳过并警告
       console.warn(`[${PACKAGE_NAME}] skipped preset "${id}": ${target} already exists and is not managed by this plugin`)
       return
     }
