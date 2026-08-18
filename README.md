@@ -28,9 +28,9 @@ This plugin is particularly useful for:
 
 A professional coding assistant emphasizing code standards and project conventions, using iterative workflows and CLI-friendly interaction style.
 
-### Coming Soon
+### IFlow Coding Mode (`iflow-coding-agent`)
 
-- IFlow Coding Mode (`iflow-coding-agent`) - Coming in future releases
+An interactive CLI agent with dynamic environment awareness, automatic Git context injection, and structured task workflows. Features auto-detected platform information, security-first permissions handling, and CLI-optimized communication style.
 
 ## Design Philosophy
 
