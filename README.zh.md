@@ -38,7 +38,34 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agentpresets
 
 重启 Web profile，然后在创建会话时选择 preset。
 
-该插件将管理的 preset 目录安装到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）。除非该目录携带本包的 ownership marker，否则不会覆盖同名目录。
+该插件将管理的 preset 目录安装到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）。
+
+## 安装行为
+
+插件实现了以下安装逻辑：
+
+**动态发现：**
+- 自动扫描 `presets/` 目录发现可用的 preset
+- 无需手动更新 preset 列表
+
+**版本更新：**
+- 对比版本号判断是否需要更新 preset
+- 插件版本变化时自动重新安装 preset
+- 版本相同则跳过安装（避免不必要的覆盖）
+
+**归属管理：**
+- 每个已安装的 preset 包含 `.dsh-preset-owner.json` 标记文件
+- 记录管理该 preset 的包名和版本
+- 确保安全清理并避免与其他插件冲突
+
+**自动清理：**
+- 删除不再由本插件提供的 preset
+- 仅删除归属于本插件的 preset（尊重其他插件和用户自建的 preset）
+
+**安全保障：**
+- ✅ 不会覆盖其他插件安装的 preset
+- ✅ 不会删除用户自建的 preset（无归属标记）
+- ✅ 仅管理由本插件安装的 preset
 
 ## 卸载
 

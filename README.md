@@ -38,7 +38,34 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agentpresets
 
 Restart the Web profile, then select the preset when creating a session.
 
-The plugin installs its managed preset directories under `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`). It never overwrites a same-named directory unless that directory carries this package's ownership marker.
+The plugin installs its managed preset directories under `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`).
+
+## Installation Behavior
+
+The plugin implements the following installation logic:
+
+**Dynamic Discovery:**
+- Automatically scans the `presets/` directory to discover available presets
+- No need to manually update preset lists
+
+**Version-Based Updates:**
+- Compares version numbers to determine if presets need updating
+- Reinstalls presets when the plugin version changes
+- Skips installation if versions match (avoids unnecessary overwrites)
+
+**Ownership Management:**
+- Each installed preset includes a `.dsh-preset-owner.json` marker file
+- Records the managing package name and version
+- Ensures safe cleanup and prevents conflicts with other plugins
+
+**Automatic Cleanup:**
+- Removes presets that are no longer provided by the plugin
+- Only deletes presets owned by this plugin (respects other plugins and user-created presets)
+
+**Safety Guarantees:**
+- ✅ Never overwrites presets from other plugins
+- ✅ Never deletes user-created presets without ownership markers
+- ✅ Only manages presets it has installed
 
 ## Remove
 
