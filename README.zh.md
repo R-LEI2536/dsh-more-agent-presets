@@ -1,5 +1,7 @@
 # dsh-more-agentpresets
 
+[English](README.md)
+
 多个可选择的 DeepSeek Harness Agent Presets 集合。
 
 这些 preset 针对 DeepSeek Harness (DSH) 做了适配。
@@ -53,3 +55,7 @@ rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ## 许可证
 
 MIT。部分 preset 组合源自其他开源项目。
+
+## 贡献
+
+欢迎贡献！欢迎提交 issue 和 pull request。

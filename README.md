@@ -1,5 +1,7 @@
 # dsh-more-agentpresets
 
+[中文文档](README.zh.md)
+
 Multiple selectable Agent Presets for DeepSeek Harness.
 
 The presets are adapted for DeepSeek Harness (DSH).
@@ -53,3 +55,7 @@ rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ## License
 
 MIT. Some preset compositions are derived from other open source projects (see NOTICE.md).
+
+## Contributing
+
+Contributions are welcome! Feel free to submit issues and pull requests.
