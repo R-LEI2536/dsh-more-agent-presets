@@ -6,6 +6,22 @@ Multiple selectable Agent Presets for DeepSeek Harness.
 
 The presets are adapted for DeepSeek Harness (DSH).
 
+## Benefits
+
+This plugin is particularly useful for:
+
+**Non-DeepSeek or Older Models:**
+- Improves performance for models that haven't been specifically adapted for DSH
+- Enhances older models that lack DSH-specific adaptations
+
+**Personal Preference:**
+- Some users may prefer more interactive, discussion-based coding assistance over independent work
+
+**Why It Helps:**
+- DSH's default prompts are optimized for DeepSeek models
+- Non-DeepSeek or older models may not perform optimally with default prompts
+- These presets provide alternative interaction patterns suitable for different models
+
 ## Available Presets
 
 ### Qwen Code Coding Mode (`qwencode-coding-agent`)
@@ -33,12 +49,12 @@ These presets differ from the default DSH prompt in their approach to user inter
 ## Install
 
 ```bash
-dsh plugin --profile web add github:R-LEI2536/dsh-more-agentpresets
+dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 ```
 
 Restart the Web profile, then select the preset when creating a session.
 
-The plugin installs its managed preset directories under `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`).
+The plugin installs its managed preset directories under `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`). For detailed installation behavior, see the [Installation Behavior](#installation-behavior) section below.
 
 ## Installation Behavior
 
@@ -70,14 +86,17 @@ The plugin implements the following installation logic:
 ## Remove
 
 ```bash
-# Remove the package
+# Remove the plugin package
 dsh plugin --profile web remove dsh-more-agentpresets
 
 # Optionally, remove the installed presets
 rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ```
 
-**Note:** Removing the package does not automatically delete the installed preset directories. You need to manually remove them if you no longer need them.
+**Note:** 
+- Removing the plugin does not automatically delete the installed preset directories
+- Preset directories with ownership markers (`.dsh-preset-owner.json`) can be re-managed if you reinstall the plugin
+- To completely remove presets, manually delete them as shown above
 
 ## License
 

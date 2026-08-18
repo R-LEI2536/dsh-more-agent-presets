@@ -6,6 +6,22 @@
 
 这些 preset 针对 DeepSeek Harness (DSH) 做了适配。
 
+## 使用场景
+
+本插件特别适用于以下场景：
+
+**非 DeepSeek 或老旧模型：**
+- 改善未针对 DSH 进行专门适配的模型的性能
+- 增强缺乏 DSH 特定适配的旧模型
+
+**个人偏好：**
+- 部分用户可能更喜欢交互式、讨论型的编程辅助，而非独立完成任务的方式
+
+**为什么有帮助：**
+- DSH 的默认提示针对 DeepSeek 模型进行了优化
+- 非 DeepSeek 或老旧模型使用默认提示时可能无法发挥最佳性能
+- 这些 preset 提供了适合不同模型的替代交互模式
+
 ## 可用 Presets
 
 ### Qwen Code 编程模式 (`qwencode-coding-agent`)
@@ -33,12 +49,12 @@
 ## 安装
 
 ```bash
-dsh plugin --profile web add github:R-LEI2536/dsh-more-agentpresets
+dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 ```
 
 重启 Web profile，然后在创建会话时选择 preset。
 
-该插件将管理的 preset 目录安装到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）。
+该插件将管理的 preset 目录安装到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）。详细的安装行为请参见下方的[安装行为](#安装行为)部分。
 
 ## 安装行为
 
@@ -77,7 +93,10 @@ dsh plugin --profile web remove dsh-more-agentpresets
 rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ```
 
-**注意：** 卸载插件包不会自动删除已安装的 preset 目录。如果不再需要，请手动删除。
+**注意：**
+- 卸载插件不会自动删除已安装的 preset 目录
+- 带有归属标记（`.dsh-preset-owner.json`）的 preset 目录在重新安装插件后会被重新管理
+- 如需彻底删除，请手动删除相应的 preset 目录
 
 ## 许可证
 
