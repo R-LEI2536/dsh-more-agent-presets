@@ -2,7 +2,6 @@
  * DSH runtime information plugin.
  */
 
-import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'
 
@@ -25,14 +24,6 @@ function resolveDshRoot() {
       }
       dir = dirname(dir)
     }
-  }
-
-  // Strategy 3: From preset location
-  const thisFile = fileURLToPath(import.meta.url)
-  const presetDir = dirname(thisFile)
-  const relativePath = resolve(presetDir, '../../../projects/dsh-plugin_dev/deepseek-harness')
-  if (existsSync(relativePath)) {
-    return relativePath
   }
 
   return 'UNKNOWN'
