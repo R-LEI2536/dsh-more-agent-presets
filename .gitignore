@@ -1,6 +1,8 @@
 # Dependencies
 node_modules/
 
+tutorial/
+
 # Package manager lock files (this project has no dependencies)
 pnpm-lock.yaml
 package-lock.json

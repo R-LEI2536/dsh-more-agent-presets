@@ -32,6 +32,19 @@ A professional coding assistant emphasizing code standards and project conventio
 
 An interactive CLI agent with dynamic environment awareness, automatic Git context injection, and structured task workflows. Features auto-detected platform information, security-first permissions handling, and CLI-optimized communication style.
 
+### IFlow Creation Mode (`iflow-cre-agent`)
+
+An enhanced mode for creating custom Agent presets. Includes all standard capabilities plus runtime inspection, plugin experimentation, and preset authoring guidance.
+
+**Features:**
+- DSH context information (Web UI URL, source root)
+- Git repository awareness
+- Custom prompt sections
+- Skills for Cordis plugin development and composition editing
+
+**Current Limitation:**
+⚠️ Cordis Tool (`@deepseek-ai/dsh-tool-cordis`) is currently unavailable due to upstream issues. Dynamic Cordis plugin creation will be available after upstream fixes.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:
