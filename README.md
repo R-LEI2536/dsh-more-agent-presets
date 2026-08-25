@@ -45,6 +45,10 @@ An enhanced mode for creating custom Agent presets. Includes all standard capabi
 **Current Limitation:**
 ⚠️ Cordis Tool (`@deepseek-ai/dsh-tool-cordis`) is currently unavailable due to upstream issues. Dynamic Cordis plugin creation will be available after upstream fixes.
 
+### Pair Coding Mode (`pair-coding-agent`)
+
+A coding assistant that works alongside the user as a pair programmer: aligns direction before each move, discusses before non-trivial edits, and waits for confirmation rather than driving the task to completion on its own. 
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:
@@ -52,7 +56,7 @@ These presets differ from the default DSH prompt in their approach to user inter
 **Interaction Style:**
 
 - Default DSH: Works independently with minimal user interaction
-- Qwen/IFlow: Actively discusses with users, maintaining communication throughout
+- Qwen/IFlow/Pair Coding: Actively discusses with users, maintaining communication throughout
 
 **Plan Mode:**
 
