@@ -56,12 +56,18 @@ These presets differ from the default DSH prompt in their approach to user inter
 **Interaction Style:**
 
 - Default DSH: Works independently with minimal user interaction
-- Qwen/IFlow/Pair Coding: Actively discusses with users, maintaining communication throughout
+- Qwen/IFlow/Pair: Actively discusses with users, maintaining communication throughout
 
 **Plan Mode:**
 
 - Default DSH: Static approval process — AI produces a complete plan document, then waits for user approval
-- Qwen/IFlow: Dynamic collaboration — AI iterates with the user through multiple rounds, refining the plan step by step
+- Qwen/IFlow/Pair: Dynamic collaboration — AI iterates with the user through multiple rounds, refining the plan step by step
+
+## Known Limitations
+
+**Preset display text does not follow the Web UI locale.** The `name` and `description` for every preset shipped by this plugin are read from each preset's `preset.yml` and rendered verbatim by the Web UI, regardless of which UI language is selected. Only the four presets shipped with DeepSeek Harness itself (`standard`, `code`, `minimal`, `cordis`) are localized through the harness's i18n system; community-shipped presets, including every preset in this plugin, are not. Switching the Web UI from Chinese to English will leave these presets' display text in Chinese.
+
+This is a limitation of how the harness consumes preset metadata, not of this plugin. As of this writing the harness exposes no mechanism for plugins to register localized strings for their own presets.
 
 ## Install
 

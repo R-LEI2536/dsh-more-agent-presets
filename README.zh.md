@@ -56,12 +56,18 @@
 **交互风格：**
 
 - DSH 默认：倾向于独立完成任务，减少与用户交互
-- Qwen/IFlow/协作编程：倾向与用户讨论，保持沟通
+- Qwen/IFlow/Pair：倾向与用户讨论，保持沟通
 
 **Plan Mode：**
 
 - DSH 默认：静态审批流程——AI 输出完整计划文档，等待用户审批
-- Qwen/IFlow：动态结对流程——AI 与用户多轮交互，逐步完善计划
+- Qwen/IFlow/Pair：动态结对流程——AI 与用户多轮交互，逐步完善计划
+
+## 已知限制
+
+**Preset 显示名称不跟随 Web UI 语言切换。** 本插件提供的每个 preset，其 `name` 与 `description` 都从各自目录下的 `preset.yml` 读取，并由 Web UI 原样渲染，与界面语言无关。只有 DeepSeek Harness 自带的四个内置 preset（`standard`、`code`、`minimal`、`cordis`）走 Harness 的 i18n 系统；社区插件提供的 preset（包括本插件内的所有 preset）都做不到。因此在 Web UI 把语言从中文切到英文时，这些 preset 的显示文案仍是中文。
+
+这是 Harness 读取 preset metadata 的方式带来的限制，不是本插件的问题。截至目前，DSH 没有给插件暴露注册本地化字符串的入口。
 
 ## 安装
 
