@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.1] - 2026-09-03
+
+### Fixed
+- `pair-coding-agent`, `iflow-coding-agent`, `qwencode-coding-agent`: bump preset section orders out of DSH's tool band (1000–2900) to fix prompt section ordering under DSH 0.1.2.rc1. Identity / task / tool-usage-policy sections now render at 980–999 (after `FILE_REFERENCE` 900), and content rules / git-aware-prompt now render at 3000–3011 (after `TOOL_REPORT` 2900). The freeze declared in 1.3.0 applies to new features; this is a bug fix applied to the two presets that share the same DSH dependency.
+
 ## [1.3.0] - 2026-08-25
 
 ### Added

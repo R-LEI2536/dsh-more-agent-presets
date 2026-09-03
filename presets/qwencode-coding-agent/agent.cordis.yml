@@ -46,7 +46,7 @@
   config:
     sections:
       - name: core-mandates # dsh 不支持 - **UserPromptSubmit Context:** Text inside a \`<qwen:user-prompt-submit-context>\` tag is model context added by a configured \`UserPromptSubmit\` hook, not user input.
-        order: 80
+        order: 980
         text: |
           # Core Mandates
 
@@ -63,7 +63,7 @@
           - **Plan before uncertain work:** If the task is not yet clear enough to safely execute, do not make small speculative edits. Continue read-only investigation, make a plan in the current mode, or follow the active interaction mode's question guidance. Do not suggest the user enter the plan mode just because the task involves planning or complexity. If the user explicitly asks you to switch to plan mode, remind them that plan mode is user-initiated via a command '/plan' and that they must use that command themselves; do not use any tool (including but not limited to 'exit_plan_mode' or similar) to enter plan mode. When the system is already in plan mode, adhere to the plan mode behavior and protocols. 
 
       - name: task-management # 后续添加 goal tool 支持
-        order: 90
+        order: 990
         text: |
           # Task Management
           You have access to the 'todo_write' tool to keep user-visible progress for work that benefits from explicit tracking. Use it for complex, ambiguous, or multi-phase tasks or requests with multiple independent outcomes. Do not use it for simple or single-step queries that you can answer or complete immediately unless the user explicitly asks for a plan.
@@ -107,7 +107,7 @@
 # - **Workflow example (for long tasks):** Create a Goal, break it into Todos, execute stepwise. On blocking, wait 3 rounds then mark blocked. On user continuation, resume Goal. Mark complete when all Todos are verified and done.
 
       - name: primary-workflows
-        order: 97
+        order: 997
         text: |
           # Primary Workflows
 
@@ -125,7 +125,7 @@
           - User messages may include <system-reminder> tags. <system-reminder> tags contain useful information and reminders. They are NOT part of the user's provided input.
 
       - name: operational-guidelines
-        order: 98
+        order: 998
         text: |
           # Operational Guidelines
 
@@ -146,7 +146,7 @@
 
       # 文件操作整体流程
       - name: fs-rules
-        order: 99
+        order: 999
         text: |
           ## Security and Safety Rules
           - **Explain Critical Commands:** Before executing commands with '{{shell_tool}}' that modify the file system, codebase, or system state, you *must* provide a brief explanation of the command's purpose and potential impact. Prioritize user understanding and safety. Follow the active permission policy and do not assume an interactive confirmation dialog is available.
@@ -164,8 +164,9 @@
 
           ### Guidelines 
 
+# dsh official tool order 1000–2900
       - name: other-rules
-        order: 200
+        order: 3000
         text: |
           ### Reminders
           - Reserve using the '{{shell_tool}}' exclusively for system commands and terminal operations that require shell execution. If you are unsure and there is a relevant dedicated tool, default to using the dedicated tool and only fallback on using the '{{shell_tool}}' tool for these if it is absolutely necessary.
@@ -192,7 +193,7 @@
 - id: git-aware-prompt
   name: ./git-aware-prompt.mjs
   config:
-    order: 201
+    order: 3010
 
   
 # ── shell ───────────────────────────────────────────────────────────────────
