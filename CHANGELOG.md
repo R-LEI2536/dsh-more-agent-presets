@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.2] - 2026-09-04
+
+### Fixed
+- `iflow-cre-agent`: bump prompt section orders out of DSH's tool band (1000–2900) to fix prompt section ordering under DSH 0.1.2.rc1. Identity / harness / task / tool-usage-policy sections now render at 980–999 (after `FILE_REFERENCE` 900), and content rules / env-info now render at 3000–3011 (after `TOOL_REPORT` 2900). This is the same fix 1.3.1 applied to `iflow-coding-agent` and `qwencode-coding-agent`; the `cordis`-flavored preset was missed at the time and now follows the same bands.
+
 ## [1.3.1] - 2026-09-03
 
 ### Fixed
