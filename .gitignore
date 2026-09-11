@@ -54,3 +54,6 @@ PUBLISH-CHECKLIST.md
 
 # Reference files
 ref/
+
+# Long-term memory (local-only)
+.reme/
