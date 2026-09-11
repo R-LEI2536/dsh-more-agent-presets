@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.3] - 2026-09-11
+
+### Fixed
+- All four presets (`pair-coding-agent`, `iflow-coding-agent`, `qwencode-coding-agent`, `iflow-cre-agent`): rename the `@deepseek-ai/dsh-persona` config field `text:` → `prefix:` to satisfy the schema introduced in DSH 0.1.5-rc.1, where `prefix` is required and `text` is no longer recognised. Without the rename, schemastery fails the required-field check on preset mount and the preset refuses to load. No semantic change to the rendered persona text; section ordering and freeze rules from 1.3.0/1.3.2 are unchanged.
+
 ## [1.3.2] - 2026-09-04
 
 ### Fixed
