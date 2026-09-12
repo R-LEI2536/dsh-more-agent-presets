@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.3.4] - 2026-09-12
+
+### Changed
+- `pair-coding-agent/agent.cordis.yml`: add three step-by-step code style preferences ("write code in explicit ordered steps", "keep the code understandable line by line", "follow framework and project conventions first"), and move the existing math/code-execution and system-reminder rules above the security guidance so they apply before any code-writing step. No change to the rendered persona text or section ordering from 1.3.0/1.3.3.
+
 ## [1.3.3] - 2026-09-11
 
 ### Fixed
