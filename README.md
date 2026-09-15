@@ -49,6 +49,10 @@ An enhanced mode for creating custom Agent presets. Includes all standard capabi
 
 A coding assistant that works alongside the user as a pair programmer: aligns direction before each move, discusses before non-trivial edits, and waits for confirmation rather than driving the task to completion on its own. 
 
+### Codex Coding Mode (`codex-coding-agent`)
+
+A port of the open-source Codex CLI agent prompt: it states what it is about to do before each tool call, reads the codebase before editing, and drives the task to completion on its own, following Codex's planning, validation, and final-answer formatting rules. Tool names are mapped to this harness's tools (`apply_patch` → `edit`/`write`, `update_plan` → `todo_write`), and Codex's plan-mode protocol is preserved through `exit_plan_mode`. Unlike the other presets here, this one keeps Codex's autonomous posture rather than a discussion-first one.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:

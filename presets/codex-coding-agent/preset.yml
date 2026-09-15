@@ -1,0 +1,2 @@
+name: Codex 编程模式
+description: 移植 OpenAI Codex 的 agent 提示词：动手前先说一句、先读代码再动手、自主推进把任务做完，并沿用 Codex 的规划、验证与答复格式。
