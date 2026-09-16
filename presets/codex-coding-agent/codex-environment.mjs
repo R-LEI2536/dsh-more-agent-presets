@@ -28,6 +28,14 @@
  * (`codex-rs/core/src/context/world_state/environment.rs:102` and the
  * diff-driven gate in `codex-rs/core/src/session/mod.rs:3810-3884`).
  * `agent/disposed` clears the entry so the map does not leak across sessions.
+ *
+ * cwd source: `<cwd>` is read from `agent.session.header.cwd` (the cwd stamped
+ * on the Session header at session creation, see
+ * `packages/core/session/src/types.ts:104`), matching upstream codex's
+ * session-scoped `<cwd>` semantics — not from `process.cwd()`, which is the
+ * Node process's cwd and can drift from it under chdir / subagent fork / remote
+ * exec. `process.cwd()` is the fallback when the Session header has no cwd
+ * recorded (theoretical — the session store always sets it).
  */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -40,13 +48,12 @@ export const inject = ['agents']
 // SessionId; immutable for the lifetime of the Session).
 const lastHashBySession = new Map()
 
-function stateHash() {
+function stateHash(sessionCwd) {
   const shell = process.platform === 'win32' ? 'pwsh' : 'bash'
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
   const date = new Date().toISOString().split('T')[0]
-  const cwd = process.cwd()
   return createHash('sha256')
-    .update(`${cwd}|${shell}|${date}|${timezone}`)
+    .update(`${sessionCwd}|${shell}|${date}|${timezone}`)
     .digest('hex')
 }
 
@@ -56,7 +63,8 @@ export function apply(ctx) {
     if (decision.kind === 'reject' || signal.aborted) return decision
 
     const sessionId = agent.session.id
-    const current = stateHash()
+    const sessionCwd = agent.session.header.cwd ?? process.cwd()
+    const current = stateHash(sessionCwd)
     if (lastHashBySession.get(sessionId) === current) return decision
     lastHashBySession.set(sessionId, current)
 
@@ -64,7 +72,7 @@ export function apply(ctx) {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
     const lines = [
       '<environment_context>',
-      `  <cwd>${process.cwd()}</cwd>`,
+      `  <cwd>${sessionCwd}</cwd>`,
       `  <shell>${shell}</shell>`,
       `  <current_date>${new Date().toISOString().split('T')[0]}</current_date>`,
       `  <timezone>${timezone}</timezone>`,
