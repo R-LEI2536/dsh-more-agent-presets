@@ -21,9 +21,15 @@
  *     persona suffix are sections (different assembly path) and the
  *     `time-context` package uses an `agent/pre-step` listener rather than
  *     `systemPrompt.context`, so they are unaffected.
- *   - Each step appends one user-role `<permissions instructions>` message
- *     to the admitted input.
+ *   - Diff-driven: a module-scope `Map<SessionId, hash>` keyed by
+ *     `agent.session.id` short-circuits injection when sandbox mode / approval
+ *     policy / override are unchanged, mirroring upstream Codex's
+ *     `WorldStateSection::render_diff` semantics
+ *     (`codex-rs/core/src/context/world_state/permissions.rs:88` and the
+ *     diff-driven gate in `codex-rs/core/src/session/mod.rs:3810-3884`).
+ *     `agent/disposed` clears the entry so the map does not leak across sessions.
  */
+import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 export const name = 'codex-permissions'
@@ -33,6 +39,10 @@ export const inject = ['systemPrompt', 'sandboxPolicy', 'approval', 'agents']
 /** Mirrored from `packages/interaction/user-approval/src/index.ts:66-68`. */
 const ASK_SENTENCE = 'Ask for approval.'
 const NEVER_SENTENCE = 'Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.'
+
+// Module-scope per-session hash store. Keyed by agent.session.id (stable branded
+// SessionId; immutable for the lifetime of the Session).
+const lastHashBySession = new Map()
 
 export function apply(ctx) {
   ctx.systemPrompt.suppressRuntimeContext()
@@ -49,8 +59,14 @@ export function apply(ctx) {
 
     const overridePolicy = ctx.approval.overrideOf(session)
     const policy = overridePolicy ?? ctx.approval.config.policy ?? 'ask'
-    const approvalText = policy === 'never' ? NEVER_SENTENCE : ASK_SENTENCE
 
+    const current = createHash('sha256')
+      .update(`${sandbox.mode}|${policy}|${overridePolicy ?? ''}`)
+      .digest('hex')
+    if (lastHashBySession.get(session.id) === current) return decision
+    lastHashBySession.set(session.id, current)
+
+    const approvalText = policy === 'never' ? NEVER_SENTENCE : ASK_SENTENCE
     const text = `<permissions instructions>\n${sandboxText}\n${approvalText}\n</permissions instructions>`
 
     const message = createUserMessage({
@@ -58,6 +74,10 @@ export function apply(ctx) {
       source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
     })
     return { ...decision, messages: [...decision.messages, message] }
+  })
+
+  ctx.on('agent/disposed', ({ agent }) => {
+    if (agent.session !== undefined) lastHashBySession.delete(agent.session.id)
   })
 }
 

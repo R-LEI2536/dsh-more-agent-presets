@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.4] - 2026-09-16
+
+### Fixed
+- `codex-coding-agent`: the three `agent/pre-step` plugins (`codex-environment.mjs`, `codex-permissions.mjs`, `codex-collab-mode.mjs`) now use per-session hash tracking keyed by `agent.session.id` (stable branded id, see `packages/core/session/src/index.ts:470` and `packages/core/session/src/types.ts:19`). Each plugin short-circuits injection when its state is unchanged, mirroring upstream Codex's `WorldStateSection::render_diff` semantics and the diff-driven gate in `codex-rs/core/src/session/mod.rs:3810-3884`. Previously the plugins re-injected their user-role message on every step, so a session of N turns accumulated 3·(N-1) duplicate `<environment_context>` / `<permissions instructions>` / `<collaboration_mode>` blocks in `input[]` even when the upstream state never changed. After the fix each block appears once on the first turn and again only when its state changes — cwd / shell / date / timezone for `codex-environment.mjs`; sandbox mode / approval policy / override for `codex-permissions.mjs`; the static default-mode body for `codex-collab-mode.mjs` (which never changes at runtime because `ctx.planMode` is unreachable from outside the `planning` group, per CHANGELOG 1.4.1). `agent/disposed` clears the entry so the in-memory `Map<SessionId, hash>` does not leak across sessions. The stale comment in `codex-collab-mode.mjs` that claimed "Re-injects every step even when the body is unchanged, mirroring Codex's durable input[] replacement semantics; DSH's session log dedup is the runtime owner's concern, not ours" was replaced with a description of the new diff-driven behaviour.
+
 ## [1.4.3] - 2026-09-16
 
 ### Changed
