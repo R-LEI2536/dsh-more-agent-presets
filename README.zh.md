@@ -51,7 +51,7 @@
 
 ### Codex 编程模式 (`codex-coding-agent`)
 
-移植开源 Codex CLI 的 agent 提示词：每次工具调用前先说明要做什么、先读代码再动手、自主把任务推进到完成，并沿用 Codex 的规划、验证与最终答复格式规范。工具名已映射到本 harness 的工具（`apply_patch` → `edit`/`write`，`update_plan` → `todo_write`），Codex 的计划模式协议通过 `exit_plan_mode` 保留。与这里其他 preset 不同，它保留的是 Codex 的自主推进姿态，而非先讨论后动手。
+移植开源 Codex CLI 的 agent 提示词：每次工具调用前先说明要做什么、先读代码再动手、自主把任务推进到完成，并沿用 Codex 的规划、验证与最终答复格式规范。工具名已映射到本 harness 的工具（`apply_patch` → `edit`/`write`，`update_plan` → `todo_write`，`request_user_input` → `ask_user_question`），Codex 的计划模式协议通过 `exit_plan_mode` 保留。Codex 的三块 `input[]`——`<permissions instructions>`、`<collaboration_mode>`、`<environment_context>`——通过三个 DSH `agent/pre-step` 插件（`codex-permissions.mjs`、`codex-collab-mode.mjs`、`codex-environment.mjs`）作为 user-role 消息注入到每步准入输入的头部，沙箱/审批策略和 cwd/platform/shell/日期实时从 DSH 运行时解析。与这里其他 preset 不同，它保留的是 Codex 的自主推进姿态，而非先讨论后动手。
 
 ## 设计理念
 

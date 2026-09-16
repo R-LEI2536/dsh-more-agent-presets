@@ -51,7 +51,7 @@ A coding assistant that works alongside the user as a pair programmer: aligns di
 
 ### Codex Coding Mode (`codex-coding-agent`)
 
-A port of the open-source Codex CLI agent prompt: it states what it is about to do before each tool call, reads the codebase before editing, and drives the task to completion on its own, following Codex's planning, validation, and final-answer formatting rules. Tool names are mapped to this harness's tools (`apply_patch` → `edit`/`write`, `update_plan` → `todo_write`), and Codex's plan-mode protocol is preserved through `exit_plan_mode`. Unlike the other presets here, this one keeps Codex's autonomous posture rather than a discussion-first one.
+A port of the open-source Codex CLI agent prompt: it states what it is about to do before each tool call, reads the codebase before editing, and drives the task to completion on its own, following Codex's planning, validation, and final-answer formatting rules. Tool names are mapped to this harness's tools (`apply_patch` → `edit`/`write`, `update_plan` → `todo_write`, `request_user_input` → `ask_user_question`), and Codex's plan-mode protocol is preserved through `exit_plan_mode`. The three Codex `input[]` blocks — `<permissions instructions>`, `<collaboration_mode>`, and `<environment_context>` — are injected as user-role messages at the head of every admitted step via three DSH `agent/pre-step` plugins (`codex-permissions.mjs`, `codex-collab-mode.mjs`, `codex-environment.mjs`), with the live sandbox / approval policy and cwd / platform / shell / date resolved from the DSH runtime. Unlike the other presets here, this one keeps Codex's autonomous posture rather than a discussion-first one.
 
 ## Design Philosophy
 

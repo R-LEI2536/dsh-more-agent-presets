@@ -4,19 +4,77 @@
 # toolset, same isolation story, same harness-suppression contract). What this
 # preset changes is where the prompt text comes from: every static section below
 # is a port of `codex-rs/models-manager/prompt.md` (the `BASE_INSTRUCTIONS`
-# constant of the open-source Codex CLI), and the plan-mode `section` is a port
-# of `codex-rs/collaboration-mode-templates/templates/plan.md`.
+# constant of the open-source Codex CLI), and three DSH `agent/pre-step`
+# plugins (`codex-permissions.mjs`, `codex-collab-mode.mjs`,
+# `codex-environment.mjs`) inject the Codex `input[]` blocks
+# (`<permissions instructions>`, `<collaboration_mode>`,
+# `<environment_context>`) as user-role messages on every step.
 #
-# Deviations from the upstream text are limited to three kinds, all deliberate:
+# Deviations from the upstream text are limited to four kinds, all deliberate:
 #   1. Tool names are mapped to the tools this harness exposes: `apply_patch` ->
 #      `edit`/`write`, `update_plan` -> `todo_write`, `rg`/`rg --files` ->
-#      `grep`/`glob`, the shell -> the `{{shell_tool}}` tool.
+#      `grep`/`glob`, the shell -> the `{{shell_tool}}` tool, `request_user_input`
+#      -> `ask_user_question`, `<proposed_plan>` -> `exit_plan_mode`.
 #   2. Codex-only environment sentences are dropped: the never/untrusted/
-#      on-request approval paragraph, and the `<collaboration_mode>` /
-#      `<proposed_plan>` delivery mechanics.
-#   3. Three compatibility blocks are added: DSH mechanism wording for the
-#      AGENTS.md spec, a policy-agnostic "Sandbox and approvals" section, and
-#      one environment-fact section.
+#      on-request approval paragraph.
+#   3. Input[] role: upstream Codex uses `role: 'developer'` for the
+#      `<permissions instructions>` and `<collaboration_mode>` blocks. DSH
+#      currently only supports `role: 'system' | 'user' | 'assistant'`
+#      (`packages/llm/llm/src/message.ts:131-135`), so the three pre-step
+#      plugins degrade to `user`-role. Each carries an `UPGRADE NOTE` at the
+#      top of its source so a future DSH release with `developer` support can
+#      be migrated by swapping `createUserMessage` for a developer-role factory.
+#   4. The Codex upstream's instruction-message taxonomy splits each input[]
+#      block by `role`; DSH collapses everything but `system`/`user`/`assistant`,
+#      so the model-side interpretation is "all non-system messages are user-
+#      directed." This matches every modern provider's wire format
+#      (OpenAI Chat Completions, Anthropic, DeepSeek) and has no observable
+#      behavioral cost — but it is a structural deviation recorded in CHANGELOG.
+#
+# Section ordering: every Codex body section lives in the 700-709 band (between
+# DSH's `TEAM_POLICY`=600 and `PTC_ONLY`=800). Within the band the sections
+# follow the order of upstream `codex-rs/models-manager/prompt.md` (lines 1,
+# 17, 29, 52, 123, 149, 165, 173, 181, 258), with `codex-tool-guidelines`
+# last among the BASE_INSTRUCTIONS content because that is where upstream puts
+# it. The three Codex `input[]` blocks are injected separately by the pre-step
+# plugins, NOT as system-prompt sections, so they do not occupy order numbers
+# in the 700-712 band. The rendered order is therefore: persona -> Codex body
+# (700-709) -> DSH `context:file-reference` (order 900) -> per-tool prose
+# (orders 1000-2900) -> first user-role Codex `<permissions instructions>`
+# / `<collaboration_mode>` / `<environment_context>` block at the head of the
+# admitted input[] (one `user/message` per block, in the registration order
+# of the three pre-step plugins).
+#
+# Upstream `BASE_INSTRUCTIONS` is built as
+# `{DEFAULT_PERSONALITY_HEADER}\n\n{{personality}}\n\n{prompt.md}` by
+# `codex-rs/models-manager/src/model_info.rs:192`. The DSH persona row
+# stands in for `DEFAULT_PERSONALITY_HEADER`. The first line of
+# `codex-identity` ("You are a deeply pragmatic, effective software
+# engineer.") is `LOCAL_PRAGMATIC_TEMPLATE` from
+# `codex-rs/models-manager/src/model_info.rs:21` — i.e. the personality
+# content rendered when `personality=Pragmatic` is selected on a fallback
+# `gpt-5.2-codex` model. To match the friendly default (empty personality
+# placeholder), delete that line; to match a fuller personality template
+# (Values / Tone / Escalation sections from
+# `codex-rs/core/templates/personalities/gpt-5.2-codex_{friendly,pragmatic}.md`)
+# uncomment the matching `codex-personality` candidate below.
+#
+# DSH-only paragraphs that have no upstream counterpart are still shadowed by
+# `suppress-harness-info.mjs` (harness identity / source / web-surface). The
+# `context:file-reference` paragraph is NOT suppressed — keeping it makes DSH
+# token handling explicit to the model and matches the harness convention
+# every other preset inherits. `codex-permissions.mjs` calls
+# `ctx.systemPrompt.suppressRuntimeContext()` to silence DSH's native
+# `sandbox:policy` and `approval:policy` contexts so they do not also render
+# under DSH's `Current runtime context...` wrapper alongside the Codex
+# `<permissions instructions>` block.
+#
+# What is intentionally NOT done: each mounted DSH tool still emits its own
+# `tool:<name>` prompt section (read/write/edit/bash/grep/glob/jobs/…), and the
+# per-tool prose that produces is left intact — matching the other coding
+# presets in this plugin. Codex upstream does not have those sections, so a
+# stricter port would shadow every tool section; the resulting preset would
+# also drift from the others on every DSH release that adds a tool.
 #
 # Realm / scope notes that apply to this file match `pair-coding-agent`
 # verbatim; see that preset's header for the rationale on `isolate`, the host
@@ -52,8 +110,10 @@
   config:
     sections:
       - name: codex-identity
-        order: 980
+        order: 700
         text: |
+          You are a deeply pragmatic, effective software engineer.
+
           You are Codex, a coding agent running in DeepSeek Harness, a terminal-based coding assistant. Codex is an open source project led by OpenAI. You are expected to be precise, safe, and helpful.
 
           Your capabilities:
@@ -71,7 +131,7 @@
           Your default personality and tone is concise, direct, and friendly. You communicate efficiently, always keeping the user clearly informed about ongoing actions without unnecessary detail. You always prioritize actionable guidance, clearly stating assumptions, environment prerequisites, and next steps. Unless explicitly asked, you avoid excessively verbose explanations about your work.
 
       - name: codex-agents-md
-        order: 982
+        order: 701
         text: |
           # AGENTS.md spec
           - Repos often contain AGENTS.md files. These files can appear anywhere within the repository.
@@ -83,10 +143,10 @@
               - Instructions about code style, structure, naming, etc. apply only to code within the AGENTS.md file's scope, unless the file states otherwise.
               - More-deeply-nested AGENTS.md files take precedence in the case of conflicting instructions.
               - Direct system/developer/user instructions (as part of a prompt) take precedence over AGENTS.md instructions.
-          - The AGENTS.md files on the path from the repository root down to your working directory, plus the user-global one, are provided with the session's workspace instructions and don't need to be re-read. When working in a subdirectory of the CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.
+          - The contents of the AGENTS.md file at the root of the repo and any directories from the CWD up to the root are included with the developer message and don't need to be re-read. When working in a subdirectory of CWD, or a directory outside the CWD, check for any AGENTS.md files that may be applicable.
 
       - name: codex-responsiveness
-        order: 983
+        order: 702
         text: |
           ## Responsiveness
 
@@ -111,32 +171,8 @@
           - “Alright, build pipeline order is interesting. Checking how it reports failures.”
           - “Spotted a clever caching util; now hunting where it gets used.”
 
-      - name: codex-tool-guidelines
-        order: 999
-        text: |
-          # Tool Guidelines
-
-          ## Shell commands
-
-          When using the {{shell_tool}} tool, you must adhere to the following guidelines:
-
-          - When searching for text or files, prefer the `grep` tool or the `glob` tool respectively — they are much faster than shell alternatives. (If the `grep` tool is not enough, then use alternatives.)
-          - Do not use shell scripts to attempt to output larger chunks of a file; use the `read` tool with `offset` and `limit`.
-
-          ## `todo_write`
-
-          A tool named `todo_write` is available to you. You can use it to keep an up‑to‑date, step‑by‑step plan for the task.
-
-          To create a new plan, call `todo_write` with a short list of 1‑sentence steps (no more than 5-7 words each) with a `status` for each step (`pending`, `in_progress`, or `completed`).
-
-          When steps have been completed, use `todo_write` to mark each finished step as `completed` and the next step you are working on as `in_progress`. There should always be exactly one `in_progress` step until everything is done. You can mark multiple items as complete in a single `todo_write` call.
-
-          If all steps are complete, ensure you call `todo_write` to mark all steps as `completed`.
-
-# dsh official tool order 1000–2900
-
       - name: codex-planning
-        order: 3000
+        order: 703
         text: |
           ## Planning
 
@@ -210,7 +246,7 @@
           If you need to write a plan, only write high quality plans, not low quality ones.
 
       - name: codex-task-execution
-        order: 3001
+        order: 704
         text: |
           ## Task execution
 
@@ -239,7 +275,7 @@
           - NEVER output inline citations like "【F:README.md†L5-L14】" in your outputs. The CLI is not able to render these so they will just be broken in the UI. Instead, if you output valid filepaths, users will be able to click on them to open the files in their editor.
 
       - name: codex-validating-work
-        order: 3002
+        order: 705
         text: |
           ## Validating your work
 
@@ -252,7 +288,7 @@
           For all of testing, running, building, and formatting, do not attempt to fix unrelated bugs. It is not your responsibility to fix them. (You may mention them to the user in your final message though.)
 
       - name: codex-ambition-precision
-        order: 3003
+        order: 706
         text: |
           ## Ambition vs. precision
 
@@ -263,7 +299,7 @@
           You should use judicious initiative to decide on the right level of detail and complexity to deliver based on the user's needs. This means showing good judgment that you're capable of doing the right extras without gold-plating. This might be demonstrated by high-value, creative touches when scope of the task is vague; while being surgical and targeted when scope is tightly specified.
 
       - name: codex-progress-updates
-        order: 3004
+        order: 707
         text: |
           ## Sharing progress updates
 
@@ -274,7 +310,7 @@
           The messages you send before tool calls should describe what is immediately about to be done next in very concise language. If there was previous work done, this preamble message should also include a note about the work done so far to bring the user along.
 
       - name: codex-presenting-work
-        order: 3005
+        order: 708
         text: |
           ## Presenting your work and final message
 
@@ -353,49 +389,67 @@
 
           For casual greetings, acknowledgements, or other one-off conversational messages that are not delivering substantive information or structured results, respond naturally without section headers or bullet formatting.
 
-      - name: codex-sandbox-and-approvals
-        order: 3006
+      - name: codex-tool-guidelines
+        order: 709
         text: |
-          # Sandbox and approvals
+          # Tool Guidelines
 
-          The file policy, sandbox mode, and approval policy that apply to this session are provided to you as runtime context with each request. Treat that context as the source of truth: never assume a mode from this prompt, and never state a policy the context does not grant.
+          ## Shell commands
 
-          - When an operation needs permissions the current policy does not grant, request escalation through the tool's documented path in the same step that needs it, and state why the operation is needed.
-          - If an escalation or an approval is rejected, do not accomplish the same action another way — no alternative tool, generated script, alias, symlink, configuration change, encoded payload, or equivalent detour. Continue with unrelated safe work, or report the blocker.
-          - A rejection is a policy answer, not a failure of the task: report it plainly, and continue with the safest available alternative that does not accomplish the denied action.
+          When using the {{shell_tool}} tool, you must adhere to the following guidelines:
 
-      - name: codex-default-mode
-        order: 3007
-        text: |
-          # Collaboration Mode: Default
+          - When searching for text or files, prefer the `grep` tool or the `glob` tool respectively — they are much faster than shell alternatives. (If the `grep` tool is not enough, then use alternatives.)
+          - Do not use shell scripts to attempt to output larger chunks of a file; use the `read` tool with `offset` and `limit`.
 
-          When plan mode is not active, you are in Default mode.
+          ## `todo_write`
 
-          ## ask_user_question availability
+          A tool named `todo_write` is available to you. You can use it to keep an up‑to‑date, step‑by‑step plan for the task.
 
-          - Use the `ask_user_question` tool only when it is listed in the available tools for this turn.
-          - In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
+          To create a new plan, call `todo_write` with a short list of 1‑sentence steps (no more than 5-7 words each) with a `status` for each step (`pending`, `in_progress`, or `completed`).
 
-      - name: env-info
-        order: 3011
-        text: |
-          # Environment Information
-          Here is useful information about the environment you are running in:
-          <env>
-          Working directory: {{cwd}}
-          Platform: {{platform}}
-          OS Version: {{os_version}}
-          Today's date: {{today_date}}
-          </env>
+          When steps have been completed, use `todo_write` to mark each finished step as `completed` and the next step you are working on as `in_progress`. There should always be exactly one `in_progress` step until everything is done. You can mark multiple items as complete in a single `todo_write` call.
+
+          If all steps are complete, ensure you call `todo_write` to mark all steps as `completed`.
+
+
+
+# ── Codex `input[]` blocks via DSH `agent/pre-step` ────────────────────────────
+#
+# Each plugin below injects one user-role message per admitted step, mirroring
+# the corresponding block in upstream Codex's `input[]`:
+#
+#   * codex-permissions.mjs  → `<permissions instructions>...</permissions instructions>`
+#                              (developer-role upstream; user-role here — see header)
+#   * codex-collab-mode.mjs  → `<collaboration_mode>...</collaboration_mode>`
+#                              (developer-role upstream; user-role here — see header)
+#                              Body is ported from `codex-rs/collaboration-mode-
+#                              templates/templates/{default,plan}.md`. The plan
+#                              body is in `ref/codex-plan-mode.md`; the default
+#                              body is in `ref/codex-default-mode.md`.
+#   * codex-environment.mjs → `<environment_context>...</environment_context>`
+#                              (user-role upstream and here)
+#
+# Registration order determines the order these blocks appear in `input[]`.
+# Mirroring upstream `world_state.rs` ordering, sandbox/approval comes before
+# collaboration_mode, and collaboration_mode comes before environment_context.
+
+- id: codex-permissions
+  name: ./codex-permissions.mjs
+
+- id: codex-collab-mode
+  name: ./codex-collab-mode.mjs
+
+- id: codex-environment
+  name: ./codex-environment.mjs
 
 # Unused Codex personality variants. Codex substitutes one of these into its
 # `{{ personality }}` placeholder; this preset ships the upstream default
 # (the "## Personality" paragraph in codex-identity above). To switch, add one
-# of the blocks below as a section (name `codex-personality`, order 981) and
+# of the blocks below as a section (name `codex-personality`, order 700) and
 # drop that paragraph from codex-identity.
 #
 #       - name: codex-personality
-#         order: 981
+#         order: 700
 #         text: |
 #           # Personality
 #
@@ -420,7 +474,7 @@
 # --- pragmatic variant ---
 #
 #       - name: codex-personality
-#         order: 981
+#         order: 700
 #         text: |
 #           # Personality
 #
@@ -442,11 +496,11 @@
 
 # Unused Codex multi-agent guidance (upstream
 # `core/templates/collab/experimental_prompt.md`). Not part of the prompt this
-# preset ports, and the `tool:subagent` section already covers delegation. Add
-# it as a section (order 3008) if you want it.
+# preset ports, and the `tool:subagent` section already covers delegation.
+# Add it as a section in the 700-712 band if you want it.
 #
 #       - name: codex-multi-agents
-#         order: 3008
+#         order: 711
 #         text: |
 #           ## Multi agents
 #           You have the possibility to spawn and use other agents to complete a task. For example, this can be use for:
