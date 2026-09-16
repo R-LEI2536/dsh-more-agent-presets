@@ -26,7 +26,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 
 export const name = 'codex-permissions'
 
-export const inject = ['systemPrompt', 'agents']
+export const inject = ['systemPrompt', 'sandboxPolicy', 'approval', 'agents']
 
 /** Mirrored from `packages/interaction/user-approval/src/index.ts:66-68`. */
 const NEVER_SENTENCE = 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).'

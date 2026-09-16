@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.1] - 2026-09-16
+
+### Fixed
+- `codex-coding-agent`: switching to the Codex preset from the picker silently fell back to the default preset (the selection did not stick). Three issues were causing it; the picker revert and the per-turn `cannot get property "planMode" without inject` crash are all symptoms of the same new agent/pre-step plugin set:
+  - `codex-collab-mode.mjs` was reading `ref/codex-default-mode.md` and `ref/codex-plan-mode.md` at module-load time with top-level `readFileSync` calls. If the installed location did not have the `ref/` directory next to the plugin file, the dynamic import threw ENOENT before `apply()` ever ran, the plugin failed to mount, and the preset composition rejected. The read now happens lazily inside `apply()` with an ENOENT fallback to an empty string + a `console.warn`, so the plugin imports cleanly even if the `ref/` files are absent. `ref/` remains the canonical source when present.
+  - `codex-permissions.mjs` declared `inject: ['systemPrompt', 'agents']` but used `ctx.sandboxPolicy` and `ctx.approval` (both undeclared). Added `'sandboxPolicy'` and `'approval'` to the `inject` array.
+  - `codex-collab-mode.mjs` declared `inject: ['systemPrompt', 'planMode', 'agents']`. `agent.cordis.yml` mounts `@deepseek-ai/dsh-plan-mode` inside the `planning` group with `isolate: { planMode: true }`, which scopes the service to that group's entry-local realm — a consumer outside the group cannot reach it (Cordis skill doc, "The rule that catches people"). Mount-validation rejects the row as "did not activate: waiting for planMode" and the whole preset composition fails. Even after dropping `'planMode'` from `inject`, touching `ctx.planMode` at runtime throws `cannot get property "planMode" without inject` at property-access time, which no try/catch can intercept. So the plugin must never read `ctx.planMode`: it now unconditionally emits the default-mode body on every step. The plan-mode body still lives at `ref/codex-plan-mode.md` (read lazily at apply time) so a future DSH release that exposes `planMode` on the outer ctx can resume the swap by adding `planMode` back to `inject` and reading it. Plan-mode messaging on the model side continues to come from `dsh-plan-mode`'s section under the `planning` group, which renders the same upstream `plan.md` content as a system-prompt section.
+
 ## [1.4.0] - 2026-09-15
 
 ### Added
