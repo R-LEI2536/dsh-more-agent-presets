@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.2] - 2026-09-16
+
+### Changed (XML format alignment with upstream Codex)
+- `codex-coding-agent`: aligned the three agent/pre-step block bodies with upstream Codex's `<environment_context>`, `<permissions instructions>`, and `<collaboration_mode>` shapes:
+  - `codex-environment.mjs` now emits the structured child-tag XML shape (`<cwd>`, `<shell>`, `<current_date>`, `<timezone>`) per `codex-rs/core/src/context/world_state/environment_render_tests.rs:83-93`. Dropped the `<platform>`/`<os_version>` fields (not in upstream); added `<timezone>` from `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+  - `codex-permissions.mjs` now emits the upstream's terse two-sentence shape: a short sandbox-state sentence (`Read only.` / `Workspace write.` / `Danger full access.`) on the first line, followed by an approval-policy sentence (`Ask for approval.` / `Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.`) per `codex-rs/core/src/context/world_state/permissions__tests__snapshots.snap:8-12,23-27`.
+  - `codex-collab-mode.mjs` emits the full default-mode body inside the `<collaboration_mode>...</collaboration_mode>` markers — matching upstream Codex where the block is a separate developer-role message carrying the active mode's body (per the world-state push order in `codex-rs/core/src/session/world_state.rs:77`, registered after `<permissions instructions>` and before `<environment_context>`). The body is lazily read from `ref/codex-default-mode.md` (with an ENOENT fallback to an empty string + `console.warn`, same as the earlier defensive load). `request_user_input` is substituted to `ask_user_question`. Plan mode messaging still comes from `dsh-plan-mode`'s section under the `planning` group.
+
 ## [1.4.1] - 2026-09-16
 
 ### Fixed

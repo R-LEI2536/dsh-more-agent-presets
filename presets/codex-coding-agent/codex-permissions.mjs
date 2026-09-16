@@ -4,7 +4,9 @@
  * Mirrors upstream `codex-rs/core/src/context/world_state/permissions.rs:175-191`:
  * one developer-role message containing the live sandbox policy + approval
  * policy, wrapped in `<permissions instructions>...</permissions instructions>`
- * markers.
+ * markers. Body format mirrors upstream's terse shape: a short sandbox-state
+ * sentence on the first line, followed by an approval-policy sentence
+ * (`codex-rs/core/src/context/world_state/permissions__tests__snapshots.snap:8-12,23-27`).
  *
  * UPGRADE NOTE: Codex upstream uses `role: 'developer'` for this block. DSH
  * currently only supports `role: 'system' | 'user' | 'assistant'` (see
@@ -29,8 +31,8 @@ export const name = 'codex-permissions'
 export const inject = ['systemPrompt', 'sandboxPolicy', 'approval', 'agents']
 
 /** Mirrored from `packages/interaction/user-approval/src/index.ts:66-68`. */
-const NEVER_SENTENCE = 'Approval prompts are disabled in this session: actions that require approval are rejected automatically — do not request sandbox escalation (do not set `sandbox_permissions`).'
-const ASK_SENTENCE = 'Approval policy: ask. Operations that require approval may ask through the configured answerers; without an available answerer, the request fails closed.'
+const ASK_SENTENCE = 'Ask for approval.'
+const NEVER_SENTENCE = 'Approval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.'
 
 export function apply(ctx) {
   ctx.systemPrompt.suppressRuntimeContext()
@@ -49,8 +51,7 @@ export function apply(ctx) {
     const policy = overridePolicy ?? ctx.approval.config.policy ?? 'ask'
     const approvalText = policy === 'never' ? NEVER_SENTENCE : ASK_SENTENCE
 
-    const body = [sandboxText, approvalText].filter((t) => t.length > 0).join('\n\n')
-    const text = `<permissions instructions>\n${body}\n</permissions instructions>`
+    const text = `<permissions instructions>\n${sandboxText}\n${approvalText}\n</permissions instructions>`
 
     const message = createUserMessage({
       content: [{ type: 'text', text }],
@@ -60,15 +61,15 @@ export function apply(ctx) {
   })
 }
 
-/** Mirrors `packages/sandbox/sandbox-policy/src/index.ts:41-55` (private). */
+/** Mirrors the shape of `packages/sandbox/sandbox-policy/src/index.ts:41-55` (private). */
 function renderSandbox(policy) {
   switch (policy.mode) {
     case 'read-only':
-      return 'Current DSH file policy: read-only. Any available operation enforced by the DSH file sandbox cannot modify files in the standing mode. Do not refuse a required modification from this policy alone: try an available tool normally and follow any denial and escalation guidance it returns.'
+      return 'Read only.'
     case 'workspace-write':
-      return `Current DSH file policy: workspace-write. Any available operation enforced by the DSH file sandbox may modify files under the session workspace: ${JSON.stringify(policy.workspaceRoot)}. Some platform temporary areas may also be writable.`
+      return 'Workspace write.'
     case 'danger-full-access':
-      return 'Current DSH file policy: danger-full-access. The DSH file sandbox does not restrict file modifications by available operations.'
+      return 'Danger full access.'
     /* v8 ignore next -- SandboxMode is a typed same-process closed union */
     default:
       throw new Error(`codex-permissions: unreachable sandbox mode: ${String(policy.mode)}`)

@@ -93,7 +93,7 @@
   name: '@deepseek-ai/dsh-persona'
   config:
     prefix: >
-      You are {{model}}, running as Codex, an open-source agentic coding interface — not the old Codex language model built by OpenAI. Your working directory is {{cwd}}.
+      You are Codex, a coding agent based on {{model}}. You and the user share the same workspace and collaborate to achieve the user's goals.
 
 
 - id: agent-instructions
