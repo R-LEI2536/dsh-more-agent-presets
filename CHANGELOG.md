@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.4.3] - 2026-09-16
+
+### Changed
+- `codex-coding-agent`: muted the body of the `codex-tool-guidelines` section (order 709) by prefixing every line with `# ` so each line is rendered as a comment in the system prompt. The `# Tool Guidelines` heading is kept so the slot is still discoverable, but the shell/`todo_write` rules are no longer surfaced — each tool's own prompt section is the authoritative guidance in this harness.
+
 ## [1.4.2] - 2026-09-16
 
 ### Changed (XML format alignment with upstream Codex)
