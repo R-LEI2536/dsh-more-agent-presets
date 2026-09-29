@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.0] - 2026-09-29
+
+### Changed (Mechanism rewrite: directory installer → declarative preset bundle, DSH 0.1.7+)
+
+- **The package is now a declarative preset bundle.** `index.mjs` (the installer that copied preset directories into `$DSH_HOME/.agent-presets/` with a `.dsh-preset-owner.json` marker) is deleted: DSH 0.1.7 removed the `.agent-presets` directory mechanism entirely (`packages/**/src` has zero hits for it), and the registry `@deepseek-ai/dsh-agent-preset-registry` neither scans directories nor accepts preset paths. Each preset is now one `@deepseek-ai/dsh-agent-preset` declaration row in a bundle patch, registered eagerly and served to sessions by the registry.
+- **New files.** `presets/<id>.patch.yml` (one per preset: `codex-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent`, `qwencode-coding-agent`) each declare one preset with `config: { id, name, description, order, plugins }`; `order` is 10–14 so the preset list sorts after the shipped presets (`standard` 1, `ptc` 2, `minimal` 3, `cordis` 4). `cordis.patch.yml` is kept as a comment-only anchor (empty patch list) so the bundle has a stable first layer. `package.json` `dsh.bundle.patch` is now an ordered list of all six patch files.
+- **Composition translation.** Each preset's former `agent.cordis.yml` entry list moved verbatim into the declaration's `config.plugins` (same rows, same `cordis:group` + `isolate` realms, same `disabled`/config `!!js` conditions), with three mechanical adaptations:
+  - Inline `.mjs` plugin rows are referenced as package subpath exports (`name: 'dsh-more-agent-presets/presets/<id>/<file>.mjs'`) instead of relative `name: ./<file>.mjs` — patch parsing anchors relative names only for top-level `insert` rows, not rows nested in a preset declaration's `config.plugins`; the subpath pattern is the same one the shipped presets use for `@deepseek-ai/dsh-plugin-manager/tools`.
+  - `iflow-cre-agent`'s `skill-filesystem.customSkillDirs` resolves the skills directory through `createRequire(baseUrl).resolve('@deepseek-ai/dsh-agent-preset/package.json')` + `'skills'` instead of `new URL('skills/', baseUrl)` — a preset is now loaded from the declaring Loader's base URL (the profile directory), not from a copied preset directory, so a `baseUrl`-relative path would point at the profile. The same resolution is what the shipped `cordis` preset uses for the official composition-authoring skills.
+  - `iflow-cre-agent` no longer ships its own copies of the `cordis-plugin-development` and `editing-cordis-compositions` skills (those were stale 0.1.5-era copies describing the retired `.agent-presets` directory mechanism and old `agentPresets` authoring APIs). `customSkillDirs` now points at the official `@deepseek-ai/dsh-agent-preset` package's `skills/` directory, which carries maintained versions of both plus `cordis-composition-reference`.
+  - `iflow-cre-agent`'s `deepseep-harness` prompt section no longer instructs the model to edit `${DSH_HOME:-$HOME/.dsh}/.agent-presets/<id>/`; it now describes presets as declarations in a profile bundle patch.
+- **`@deepseek-ai/dsh-workflow-worker-thread` → `@deepseek-ai/dsh-workflow-ptc`.** DSH 0.1.7 moved workflow orchestration into the sandboxed PTC Node runtime; the former worker-thread engine package is gone. Each preset's `workflow-worker-thread` row (`provider: spawn`) is now `workflow-ptc` / `@deepseek-ai/dsh-workflow-ptc`, matching the shipped `standard`/`ptc` presets.
+
+### Added / Updated
+
+- `package.json` 1.5.0: `exports` exposes `./presets/*` (the inline plugin assets) plus the patch files and `package.json`; `main`/`exports["."]` removed (no installer entry point); `dependencies` added for the `@deepseek-ai/dsh-*` plugin packages the preset rows reference (the same packages the shipped bundles install; profiles use pnpm's hoisted linker, so each version resolves to one shared instance), all `^0.1.7-rc.1`. `@deepseek-ai/dsh-llm` — the harness's runtime LLM library, which `dsh-base` already installs and instantiates — is excluded from `dependencies` and declared as a **peerDependency** instead: the three codex inline `.mjs` plugins import only `createUserMessage` from it, so the preset reuses the host's single instance rather than shipping a second copy, and the peer compatibility gate rejects an out-of-range host version at install time instead of silently mounting a drifted copy. `peerDependencies` (`@deepseek-ai/cordis` `~4.0.4`, `@deepseek-ai/cordis-plugin-loader` `~1.0.5` — the harness's vendor runtime, same tilde range the shipped bundles publish — and `@deepseek-ai/dsh-agent-preset-registry`, `@deepseek-ai/dsh-llm` `^0.1.7-rc.1`) act as the DSH 0.1.7 compatibility gate. `^0.1.7-rc.1` admits 0.1.7-rc.2 (semver with `includePrerelease`); `^0.1.7`/`~0.1.7`/`>=0.1.7` would reject the prerelease and must not be used.
+- README/README.zh: install/behavior/remove sections rewritten for the declarative mechanism; a migration note tells users of ≤1.4.x that `~/.dsh/.agent-presets` leftovers are inert on 0.1.7+ and can be deleted manually. NOTICE.md unchanged (licensing of derived presets is unaffected).
+
+### Notes
+
+- Requirement: DSH **0.1.7-rc.1+** installs and activates the bundle; older hosts refuse it through the peer gate.
+- Preset `id`s are unchanged, so session selections and `agent-preset/selected` session-log records survive the upgrade.
+- The plugin writes nothing to the user directory on 0.1.7+ — no `.agent-presets` copies, no marker files.
+
 ## [1.4.4] - 2026-09-16
 
 ### Fixed

@@ -69,9 +69,13 @@
 
 ## 已知限制
 
-**Preset 显示名称不跟随 Web UI 语言切换。** 本插件提供的每个 preset，其 `name` 与 `description` 都从各自目录下的 `preset.yml` 读取，并由 Web UI 原样渲染，与界面语言无关。只有 DeepSeek Harness 自带的四个内置 preset（`standard`、`code`、`minimal`、`cordis`）走 Harness 的 i18n 系统；社区插件提供的 preset（包括本插件内的所有 preset）都做不到。因此在 Web UI 把语言从中文切到英文时，这些 preset 的显示文案仍是中文。
+**Preset 显示名称不跟随 Web UI 语言切换。** 本插件提供的每个 preset，其 `name` 与 `description` 都从声明行（declaration）读取，并由 Web UI 原样渲染，与界面语言无关。只有 DeepSeek Harness 自带的四个内置 preset（`standard`、`ptc`、`minimal`、`cordis`）走 Harness 的 i18n 系统；社区插件提供的 preset（包括本插件内的所有 preset）都做不到。因此在 Web UI 把语言从中文切到英文时，这些 preset 的显示文案仍是中文。
 
 这是 Harness 读取 preset metadata 的方式带来的限制，不是本插件的问题。截至目前，DSH 没有给插件暴露注册本地化字符串的入口。
+
+## 环境要求
+
+- DeepSeek Harness **0.1.7-rc.1 及以上**（本版本是声明式 preset bundle；0.1.7 之前的 `.agent-presets` 目录安装器已不存在）。
 
 ## 安装
 
@@ -81,49 +85,30 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 重启 Web profile，然后在创建会话时选择 preset。
 
-该插件将管理的 preset 目录安装到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）。详细的安装行为请参见下方的[安装行为](#安装行为)部分。
+本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 5 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
 
-## 安装行为
+## 行为说明
 
-插件实现了以下安装逻辑：
+**声明式 preset（DSH 0.1.7+）：**
+- 每个 preset 是一行声明在 bundle patch 中的 `@deepseek-ai/dsh-agent-preset`；`config.plugins` 持有子插件行（工具、提示段、带 `isolate` realm 的组，以及以包子路径 `dsh-more-agent-presets/presets/<id>/` 引用的本插件内嵌 `.mjs` 插件）。
+- preset `id`（`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
+- registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 
-**动态发现：**
-- 自动扫描 `presets/` 目录发现可用的 preset
-- 无需手动更新 preset 列表
-
-**版本更新：**
-- 对比版本号判断是否需要更新 preset
-- 插件版本变化时自动重新安装 preset
-- 版本相同则跳过安装（避免不必要的覆盖）
-
-**归属管理：**
-- 每个已安装的 preset 包含 `.dsh-preset-owner.json` 标记文件
-- 记录管理该 preset 的包名和版本
-- 确保安全清理并避免与其他插件冲突
-
-**自动清理：**
-- 删除不再由本插件提供的 preset
-- 仅删除归属于本插件的 preset（尊重其他插件和用户自建的 preset）
-
-**安全保障：**
-- ✅ 不会覆盖其他插件安装的 preset
-- ✅ 不会删除用户自建的 preset（无归属标记）
-- ✅ 仅管理由本插件安装的 preset
+**从 ≤1.4.x 迁移：**
+- ≤1.4.4 版本会把 preset 目录拷贝到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）并写入 `.dsh-preset-owner.json` 标记。DSH 0.1.7 不再读取该目录，本插件也不再写入。
+- 升级后，旧拷贝目录是无用残留。如需清净可直接手动删除：
+  ```bash
+  rm -rf ~/.dsh/.agent-presets
+  ```
+  （只针对你自己的 `~/.dsh/.agent-presets`；在新机制下不存在其他插件或用户手写 preset 放在那里的情况——preset 现在都是 profile patch 声明。）
 
 ## 卸载
 
 ```bash
-# 移除插件包
 dsh plugin --profile web remove dsh-more-agent-presets
-
-# 可选：删除已安装的 preset 目录
-rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ```
 
-**注意：**
-- 卸载插件不会自动删除已安装的 preset 目录
-- 带有归属标记（`.dsh-preset-owner.json`）的 preset 目录在重新安装插件后会被重新管理
-- 如需彻底删除，请手动删除相应的 preset 目录
+卸载 bundle 会移除它的 patch 层，5 行 preset 声明随之从 profile 消失；安装在 profile node_modules 下的 preset `plugins` 资源随包移除。0.1.7+ 无需清理 `~/.dsh/.agent-presets`（若从 ≤1.4.x 迁移，参见上方「行为说明」）。
 
 ## 许可证
 

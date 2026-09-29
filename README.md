@@ -69,9 +69,13 @@ These presets differ from the default DSH prompt in their approach to user inter
 
 ## Known Limitations
 
-**Preset display text does not follow the Web UI locale.** The `name` and `description` for every preset shipped by this plugin are read from each preset's `preset.yml` and rendered verbatim by the Web UI, regardless of which UI language is selected. Only the four presets shipped with DeepSeek Harness itself (`standard`, `code`, `minimal`, `cordis`) are localized through the harness's i18n system; community-shipped presets, including every preset in this plugin, are not. Switching the Web UI from Chinese to English will leave these presets' display text in Chinese.
+**Preset display text does not follow the Web UI locale.** The `name` and `description` for every preset shipped by this plugin are read from each preset's declaration and rendered verbatim by the Web UI, regardless of which UI language is selected. Only the presets shipped with DeepSeek Harness itself (`standard`, `ptc`, `minimal`, `cordis`) are localized through the harness's i18n system; community-shipped presets, including every preset in this plugin, are not. Switching the Web UI from Chinese to English will leave these presets' display text in Chinese.
 
 This is a limitation of how the harness consumes preset metadata, not of this plugin. As of this writing the harness exposes no mechanism for plugins to register localized strings for their own presets.
+
+## Requirements
+
+- DeepSeek Harness **0.1.7-rc.1 or newer** (this release is a declarative preset bundle; the pre-0.1.7 `.agent-presets` directory installer no longer exists).
 
 ## Install
 
@@ -81,49 +85,30 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 Restart the Web profile, then select the preset when creating a session.
 
-The plugin installs its managed preset directories under `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`). For detailed installation behavior, see the [Installation Behavior](#installation-behavior) section below.
+The plugin is a **declarative preset bundle**: installing it adds five `@deepseek-ai/dsh-agent-preset` declaration rows to the profile through `dsh.bundle.patch` (one per preset, in `presets/<id>.patch.yml`). The declaration rows are registered with `@deepseek-ai/dsh-agent-preset-registry` and appear in the preset picker automatically. The plugin writes nothing to the user directory — no files are copied anywhere.
 
-## Installation Behavior
+## Behavior Notes
 
-The plugin implements the following installation logic:
+**Declarative presets (DSH 0.1.7+):**
+- Each preset is a `@deepseek-ai/dsh-agent-preset` row declared in a bundle patch; `config.plugins` holds the child plugin rows (tools, prompt sections, groups with `isolate` realms, and the plugin's inline `.mjs` plugins referenced as package subpath exports under `dsh-more-agent-presets/presets/<id>/`).
+- Preset `id` values (`codex-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent`, `qwencode-coding-agent`) are unchanged from previous releases, so existing session selections keep working.
+- The registry retains each declaration's composition for live sessions; editing a declaration affects subsequently created Agents.
 
-**Dynamic Discovery:**
-- Automatically scans the `presets/` directory to discover available presets
-- No need to manually update preset lists
-
-**Version-Based Updates:**
-- Compares version numbers to determine if presets need updating
-- Reinstalls presets when the plugin version changes
-- Skips installation if versions match (avoids unnecessary overwrites)
-
-**Ownership Management:**
-- Each installed preset includes a `.dsh-preset-owner.json` marker file
-- Records the managing package name and version
-- Ensures safe cleanup and prevents conflicts with other plugins
-
-**Automatic Cleanup:**
-- Removes presets that are no longer provided by the plugin
-- Only deletes presets owned by this plugin (respects other plugins and user-created presets)
-
-**Safety Guarantees:**
-- ✅ Never overwrites presets from other plugins
-- ✅ Never deletes user-created presets without ownership markers
-- ✅ Only manages presets it has installed
+**Migration from ≤1.4.x:**
+- Versions ≤1.4.4 copied preset directories into `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`) with a `.dsh-preset-owner.json` marker. DSH 0.1.7 no longer reads that directory, and this plugin no longer writes it.
+- After upgrading, the old copied directories are inert leftovers. Remove them manually if you want a clean slate:
+  ```bash
+  rm -rf ~/.dsh/.agent-presets
+  ```
+  (Only your own `~/.dsh/.agent-presets`; nothing from another plugin or hand-authored presets should live there in the new mechanism, since presets are profile patches now.)
 
 ## Remove
 
 ```bash
-# Remove the plugin package
 dsh plugin --profile web remove dsh-more-agent-presets
-
-# Optionally, remove the installed presets
-rm -rf ~/.dsh/.agent-presets/qwencode-coding-agent
 ```
 
-**Note:** 
-- Removing the plugin does not automatically delete the installed preset directories
-- Preset directories with ownership markers (`.dsh-preset-owner.json`) can be re-managed if you reinstall the plugin
-- To completely remove presets, manually delete them as shown above
+Removing the bundle removes its patch layer, so the five preset declarations disappear from the profile. The preset `plugins` assets installed under the profile's node_modules are removed with the package. No `~/.dsh/.agent-presets` cleanup is needed on 0.1.7+ (see Behavior Notes if you are migrating from ≤1.4.x).
 
 ## License
 

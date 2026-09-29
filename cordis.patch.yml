@@ -1,3 +1,14 @@
-- insert:
-    - id: dsh-more-agent-presets-installer
-      name: dsh-more-agent-presets
+# dsh-more-agent-presets — declarative agent preset bundle for DSH 0.1.7+.
+#
+# This file is the bundle's anchor patch. The five agent presets themselves are
+# declared in the ordered patch files listed in package.json `dsh.bundle.patch`
+# (presets/<id>.patch.yml), one `@deepseek-ai/dsh-agent-preset` declaration each.
+#
+# The former file-copy installer (`index.mjs`, which copied preset directories
+# into `$DSH_HOME/.agent-presets/`) is gone: that directory mechanism is retired
+# in DSH 0.1.7. Each preset is now a declarative row registered with
+# `@deepseek-ai/dsh-agent-preset-registry`; sessions select one by its `config.id`.
+#
+# This anchor contributes no rows of its own; it exists so the bundle has a
+# stable first patch layer.
+[]
