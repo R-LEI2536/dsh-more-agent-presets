@@ -94,10 +94,11 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 - preset `id`（`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
 - registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 
-**多文件 patch 与根入口产物：**
-- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 锚层，外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 6 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
-- 部分第三方工具只识别字符串形式。`dshmarket` ≤ 1.66.8 仅在 `dsh.bundle.patch` 为字符串时才解析它；读不到这份列表时，它会退回到包的根入口产物来判断已安装的构建是否可加载。`index.mjs`（通过 `main`、`exports["."]` 声明，并由 `files` 打进产物）就是为让这项检查看到一个真实产物而存在：它是一句 no-op `export {}`（与 `@deepseek-ai/dsh-base` 同形），DSH 本身从不导入 bundle 的根。
-- **不要删除 `index.mjs`、`main` 或 `exports["."]`。** 缺了它们，插件管理器会把本插件标成损坏（*「已安装，校验未通过／声明的入口产物缺失」*），市场也会拒绝安装或更新（*「updated build has no loadable entry」*），尽管 DSH 本身能正常加载这个 bundle。
+**多文件 patch、bundle 自身那一行，与根入口产物：**
+- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 6 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
+- `cordis.patch.yml` 声明的是这个 bundle **自身**的 loader 行（`id`/`name` 都是 `dsh-more-agent-presets`），`index.mjs` 是它背后的空插件。这一行才是让 bundle 出现在运行中组合里的东西，也是每个 bundle 给自身声明行的固定做法（`dshmarket` 插的是 `dsh-market` / `dshmarket`；`@deepseek-ai/dsh-web-app` 插的是 `web-runtime` / `@deepseek-ai/dsh-web-app`）。缺了它，`dshmarket` 的存活判定（`liveIncludes`）无从匹配——5 个 preset 行的 `name` 是 `@deepseek-ai/dsh-agent-preset`——插件管理器于是每次打开页面都显示*「已安装，重启后生效」*，重启也不例外，而 5 个 preset 其实一直是好的。
+- 部分第三方工具只识别字符串形式，并按「声明的根入口产物」判断已安装的构建是否可加载。`index.mjs`（通过 `main`、`exports["."]` 声明，并由 `files` 打进产物）既是为了让这项检查看到一个真实产物，也是为了让上面那一行有个真正的插件可挂。
+- **不要删除那一行自身行，也不要删除 `index.mjs`、`main` 或 `exports["."]`。** 缺了它们，插件管理器会把本插件标成损坏（*「已安装，校验未通过／声明的入口产物缺失」*）、拒绝安装或更新（*「updated build has no loadable entry」*），或者永远显示「重启后生效」——尽管 DSH 本身能正常加载这个 bundle。
 
 **从 ≤1.4.x 迁移：**
 - ≤1.4.4 版本会把 preset 目录拷贝到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）并写入 `.dsh-preset-owner.json` 标记。DSH 0.1.7 不再读取该目录，本插件也不再写入。

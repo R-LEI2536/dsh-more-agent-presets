@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.3] - 2026-10-02
+
+### Fixed (the bundle is now visible in the loader, so the market verdict can clear)
+
+- **The root patch now inserts a row naming this package, and `index.mjs` became a loadable no-op plugin.** `cordis.patch.yml` — the bundle's first layer — previously contributed no rows at all, so nothing in the running composition carried this package's name. That is why `dshmarket` showed **"已安装，重启后生效 / bundle patch 含配置/表达式,热挂载仅支持纯 insert;重启后由 bundle 层生效"** on every page load, *including after a restart*. The row is the shape every bundle uses for itself: `dshmarket` inserts `dsh-market` / `dshmarket` (`node_modules/dshmarket/cordis.patch.yml`), and `@deepseek-ai/dsh-web-app` inserts `web-runtime` / `@deepseek-ai/dsh-web-app` (`packages/bundle/web-app/cordis.patch.yml`). Behind it, `index.mjs` is now `export function apply(): void {}` — the same empty node half `@deepseek-ai/dsh-client-ui-agent-preset` ships ("the empty apply exists so the plugin appears in the host cordis.yml / Loader").
+- **Why the verdict could never clear: both liveness paths were blind to this package.** `verifyActivation` decides on `loaderLive = liveIncludes(live, name) || carriedRowLive(live, dir, name)` (`src/verify.ts`). `liveIncludes` matches a live loader entry whose name is this package or a subpath of it — but the five preset rows are named `@deepseek-ai/dsh-agent-preset`, so it never matched. `carriedRowLive` needs `bundlePatchInsertedIds()`, which resolves the patch through `declaredBundlePatchFile()` and accepts `dsh.bundle.patch` **only when it is a string** (`src/profile.ts`); this package declares the ordered six-file array, so it returned zero ids. With both false, the verdict fell to the "in the bundle layer but not hot-mounted" branch permanently.
+- **The shown reason did not describe this package's content at all.** `patchTextOf()` (`src/verify.ts`) hard-codes the package-root `cordis.patch.yml` — it never reads the *declared* patch — and `parseSimplePatch('[]')` returns `null` because it requires at least one row (`src/hot.ts`). dshmarket therefore always described the old empty anchor as "含配置/表达式" without opening one of the five preset patches. The same string-only resolution explains 1.5.2's `broken` verdict and its update rollback. Verified against `dshmarket` 1.66.5 (`dev_web`) and 1.66.8 (`web`).
+- **Not a functional fix: the presets were already working.** They compose from `dsh.bundle.patch` and appear in the preset picker; the tag was cosmetic, and it no longer blocks install or update (that guard was the `broken` state fixed in 1.5.2). No preset row, `id`, `order` value, `config.plugins` entry, or asset changed, and `dsh.bundle.patch` remains the ordered six-file list. `dependencies` / `peerDependencies` unchanged.
+- **Do not remove the self row.** Emptying `cordis.patch.yml` back to `[]` (or deleting its `- insert:` block) reintroduces the permanent "重启后生效" verdict; removing `index.mjs`, `main`, or `exports["."]` additionally reintroduces 1.5.2's `broken` verdict and the market's update rollback.
+
 ## [1.5.2] - 2026-10-02
 
 ### Fixed (tooling compatibility: restored root entry artifact)
