@@ -94,6 +94,11 @@ The plugin is a **declarative preset bundle**: installing it adds five `@deepsee
 - Preset `id` values (`codex-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent`, `qwencode-coding-agent`) are unchanged from previous releases, so existing session selections keep working.
 - The registry retains each declaration's composition for live sessions; editing a declaration affects subsequently created Agents.
 
+**Multi-file patch and the root entry artifact:**
+- `dsh.bundle.patch` is an **ordered list** (`cordis.patch.yml` anchor plus one `presets/<id>.patch.yml` per preset) — the array form DSH core supports. A host composes all six layers and, because this is a bundle, activation happens on the next start, not on hot mount.
+- Some third-party tooling only understands the string form. `dshmarket` ≤ 1.66.8 resolves `dsh.bundle.patch` only when it is a string; when it cannot read the list it falls back to the package's declared root entry artifact to decide whether an installed build is loadable. `index.mjs` — declared through `main` and `exports["."]` and shipped via `files` — exists so that check sees a real artifact. It is a no-op `export {}` (the same shape `@deepseek-ai/dsh-base` ships) and DSH never imports a bundle's root.
+- **Do not remove `index.mjs`, `main`, or `exports["."]`.** Without them the plugin manager reports the plugin as broken (*"已安装，校验未通过 / the declared entry artifact is missing"*) and the market refuses to install or update it (*"updated build has no loadable entry"*), even though DSH itself loads the bundle correctly.
+
 **Migration from ≤1.4.x:**
 - Versions ≤1.4.4 copied preset directories into `$DSH_HOME/.agent-presets` (normally `~/.dsh/.agent-presets`) with a `.dsh-preset-owner.json` marker. DSH 0.1.7 no longer reads that directory, and this plugin no longer writes it.
 - After upgrading, the old copied directories are inert leftovers. Remove them manually if you want a clean slate:

@@ -94,6 +94,11 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 - preset `id`（`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
 - registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 
+**多文件 patch 与根入口产物：**
+- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 锚层，外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 6 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
+- 部分第三方工具只识别字符串形式。`dshmarket` ≤ 1.66.8 仅在 `dsh.bundle.patch` 为字符串时才解析它；读不到这份列表时，它会退回到包的根入口产物来判断已安装的构建是否可加载。`index.mjs`（通过 `main`、`exports["."]` 声明，并由 `files` 打进产物）就是为让这项检查看到一个真实产物而存在：它是一句 no-op `export {}`（与 `@deepseek-ai/dsh-base` 同形），DSH 本身从不导入 bundle 的根。
+- **不要删除 `index.mjs`、`main` 或 `exports["."]`。** 缺了它们，插件管理器会把本插件标成损坏（*「已安装，校验未通过／声明的入口产物缺失」*），市场也会拒绝安装或更新（*「updated build has no loadable entry」*），尽管 DSH 本身能正常加载这个 bundle。
+
 **从 ≤1.4.x 迁移：**
 - ≤1.4.4 版本会把 preset 目录拷贝到 `$DSH_HOME/.agent-presets`（通常是 `~/.dsh/.agent-presets`）并写入 `.dsh-preset-owner.json` 标记。DSH 0.1.7 不再读取该目录，本插件也不再写入。
 - 升级后，旧拷贝目录是无用残留。如需清净可直接手动删除：

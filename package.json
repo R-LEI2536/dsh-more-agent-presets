@@ -1,14 +1,17 @@
 {
   "name": "dsh-more-agent-presets",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "多个可选择的 DeepSeek Harness Agent Presets 集合（声明式 preset bundle，DSH 0.2.0-rc.1+）",
   "type": "module",
+  "main": "./index.mjs",
   "exports": {
+    ".": "./index.mjs",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./presets/*": "./presets/*",
     "./package.json": "./package.json"
   },
   "files": [
+    "index.mjs",
     "cordis.patch.yml",
     "presets",
     "NOTICE.md"

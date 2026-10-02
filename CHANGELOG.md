@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.2] - 2026-10-02
+
+### Fixed (tooling compatibility: restored root entry artifact)
+
+- **`index.mjs`, `main`, `exports["."]`, and `files` are back.** 1.5.0 removed the root entry on purpose ("no installer entry point"), but third-party tooling judges an installed package by its declared entry artifact: `dshmarket`'s `entryArtifactExists` (`src/profile.ts`) reads `main`/`exports["."]` and otherwise probes `index.js`, and its `hasLoadableEntry` carrier fallback reads `bundlePatchTargets`, which resolves `dsh.bundle.patch` only when it is a **string**. With neither present, `verifyActivation` returned `broken` — the plugin manager showed **"已安装，校验未通过 / 声明的入口产物缺失(源码检出或构建被拦),下次启动会失败"** — and, worse, the same `hasLoadableEntry` gates the market's install/update acceptance (`src/routes.ts` update guard, `src/install.ts`), so an update was rolled back with `"dsh-more-agent-presets: updated build has no loadable entry"`. Verified against `dshmarket` 1.66.5 and 1.66.8.
+- **No DSH-side behavior change.** `dsh.bundle.patch` stays the ordered six-file list — DSH core explicitly supports `string | string[]` (`packages/boot/app-boot/src/profile.ts` `bundlePatchFiles`, covered by the *"applies a dsh.bundle.patch list in order"* test). DSH never imports a bundle's root, so `index.mjs` is a documented `export {}` no-op mirroring `@deepseek-ai/dsh-base`; the five preset declarations, their `ids`, `order` values (10–14), `config.plugins` rows, and the `presets/**` assets are byte-identical to 1.5.1. No `dependencies`/`peerDependencies` change.
+- `index.mjs` is listed in `files`, so both `npm pack` and pnpm's git/pnpm install (`github:R-LEI2536/dsh-more-agent-presets`) ship it. Without that entry the restored root artifact would be absent from the installed copy and the false `broken` verdict would return.
+
 ## [1.5.1] - 2026-10-02
 
 ### Changed (DSH 0.2.0-rc.x compatibility)
