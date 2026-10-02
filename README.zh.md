@@ -75,7 +75,7 @@
 
 ## 环境要求
 
-- DeepSeek Harness **0.1.7-rc.1 及以上**（本版本是声明式 preset bundle；0.1.7 之前的 `.agent-presets` 目录安装器已不存在）。
+- DeepSeek Harness **0.2.0-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在）。0.1.7-rc.x 宿主会通过 peer 兼容门整包跳过本插件，请先升级宿主。
 
 ## 安装
 

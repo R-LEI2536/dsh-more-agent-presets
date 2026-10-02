@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.5.1] - 2026-10-02
+
+### Changed (DSH 0.2.0-rc.x compatibility)
+
+- **All 25 `@deepseek-ai/dsh-*` ranges moved from `^0.1.7-rc.1` to `^0.2.0-rc.1`** — the 23 `dependencies` plus the two `peerDependencies` (`@deepseek-ai/dsh-agent-preset-registry`, `@deepseek-ai/dsh-llm`). The DSH 0.2.0 compatibility gate rejects `^0.1.7-rc.1`: `evaluatePluginCompatibility` (`packages/boot/app-boot/src/plugin-compatibility.ts`, byte-identical in 0.1.7-rc.2 and 0.2.0-rc.2) iterates **only** `peerDependencies`, keeps names equal to `@deepseek-ai/dsh` or prefixed `@deepseek-ai/dsh-`, and tests `semver.satisfies(runtimeVersion, range, { includePrerelease: true })`. `^0.1.7-rc.1` expands to `>=0.1.7-rc.1 <0.2.0-0`, so `0.2.0-rc.2` fails. Because this package is a bundle (`dsh.bundle`), the failure is not a disabled row: `loadProfileDirectory` (`profile.ts`, "A bundle is not a plugin row, so row admission never reads its own peers") evaluates the bundle's **own** manifest and throws into `skippedBundles`, so all five presets would silently disappear from the preset picker while the profile still starts. `^0.2.0-rc.1` admits `0.2.0-rc.1`/`rc.2`/…/`0.2.1` and rejects `0.3.0-0`, so the next rc needs no further edit. `^0.2.0` / `~0.2.0` must **not** be used: they exclude prereleases and reject the current runtime; `>=0.2.0-rc.1` abandons the upper bound.
+- **`@deepseek-ai/cordis` `~4.0.4` and `@deepseek-ai/cordis-plugin-loader` `~1.0.5` unchanged.** The gate skips names that are neither `@deepseek-ai/dsh` nor `@deepseek-ai/dsh-*`, and both vendor packages are untouched across 0.1.7-rc.2 → 0.2.0-rc.2.
+- **`peerDependenciesMeta.optional` is not an exemption** — the gate never reads that field. This package declares no optional peers, so nothing to re-check, but the same trap applies to any future peer marked optional.
+- **No preset, row, or asset change.** The five `presets/<id>.patch.yml` files, `cordis.patch.yml`, the inline `.mjs` plugins, per-preset `ref/`, and the `exports` / `files` / `dsh.bundle` fields are byte-identical to 1.5.0. Neither `tool-bash` nor `tool-pwsh` descriptions are recorded as snapshots in this repo, so their two added description lines need no re-recording.
+- **`@deepseek-ai/dsh-tool-ask-user` gained an optional `Config { mode?: 'legacy' | 'timed'; timeout?: number }` in 0.2.0; this release does not adopt it.** The default is `legacy`, so the five config-less `tool-ask-user` rows keep the blocking schema, the same model-visible description, and the same `{ answers: [...] }` result. Upstream's own shipped presets also stay blocking. Adopting `mode: timed` would be a deliberate behavior change (an extra model-visible `timeout` parameter, a `oneOf` result schema that can return `{ pending: true, callId, message }`, and later answers arriving as `answer_to_pending_question` user messages) and deserves its own release.
+- README / README.zh requirement line: DSH `0.1.7-rc.1+` → `0.2.0-rc.1+`, with an explicit note that 0.1.7-rc.x hosts skip the whole bundle.
+
+### Notes
+
+- **Breaking for 0.1.7 hosts by construction, and intentional.** `^0.2.0-rc.1` does not admit `0.1.7-rc.2`, so a 0.1.7-rc.x host refuses this release through the same gate in reverse. Plugin release and host upgrade must ship as one batch; plugin installation fails at install time with `ManagementFailure('incompatible-version')` rather than silently.
+- **No `pnpm-lock.yaml` change.** The file is untracked and listed in `.gitignore` (this project installs nothing locally) and its importer is empty; there is nothing to re-resolve.
+- Preset `id`s, `order` values (10–14), and `config.plugins` row sets are unchanged, so existing session selections and `agent-preset/selected` session-log records still resolve.
+
 ## [1.5.0] - 2026-09-29
 
 ### Changed (Mechanism rewrite: directory installer → declarative preset bundle, DSH 0.1.7+)

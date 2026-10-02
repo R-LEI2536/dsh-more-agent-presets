@@ -75,7 +75,7 @@ This is a limitation of how the harness consumes preset metadata, not of this pl
 
 ## Requirements
 
-- DeepSeek Harness **0.1.7-rc.1 or newer** (this release is a declarative preset bundle; the pre-0.1.7 `.agent-presets` directory installer no longer exists).
+- DeepSeek Harness **0.2.0-rc.1 or newer**. This release is a declarative preset bundle (the pre-0.1.7 `.agent-presets` directory installer no longer exists). A host on 0.1.7-rc.x skips the whole bundle through the peer compatibility gate, so update the host first.
 
 ## Install
 
