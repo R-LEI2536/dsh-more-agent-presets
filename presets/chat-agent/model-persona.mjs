@@ -19,7 +19,7 @@
  * `dispatch.ts assembleContextFor`), so the function reads
  * `context.agent.options.model` and returns the row for that model.
  *
- * Table of contents (the verbatim source is `presets/model-personas.md`; the
+ * Table of contents (the verbatim source is `presets/chat-agent/model-personas.md`; the
  * `config` of this row is its machine-readable copy — keep the two in sync):
  *
  *   - key = model id (`agent.options.model`), matched case-insensitively after

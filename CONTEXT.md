@@ -25,7 +25,7 @@ _Avoid_: 全局、core
 _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久 shell）
 
 **Model persona**:
-按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。唯一真源在 `presets/model-personas.md`，patch 内嵌副本需两处同步。
+按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。唯一真源在 `presets/chat-agent/model-personas.md`，patch 内嵌副本需两处同步。
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
@@ -45,4 +45,4 @@ _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，�
 > **Dev:** 那 `chat-agent` 的 preset id 是 `preset-chat-agent` 吧？
 > **Maintainer:** preset id 是 `chat-agent`；`preset-chat-agent` 只是 patch 层里的行 id，用来定位这一行 patch。
 > **Dev:** chat-agent 的 persona 文案要改，改哪里？
-> **Maintainer:** 先改 `presets/model-personas.md`（唯一真源），再把同一段粘到 `chat-agent.patch.yml` 的 `model-persona` 行 `config`——两处必须同步。
+> **Maintainer:** 先改 `presets/chat-agent/model-personas.md`（唯一真源），再把同一段粘到 `chat-agent.patch.yml` 的 `model-persona` 行 `config`——两处必须同步。

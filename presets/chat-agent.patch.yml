@@ -11,7 +11,7 @@
 #
 # The persona comes from `model-persona.mjs` (it replaces the
 # `@deepseek-ai/dsh-persona` row): the text is picked per session model from the
-# verbatim table in `presets/model-personas.md` -- the machine-readable copy
+# verbatim table in `presets/chat-agent/model-personas.md` -- the machine-readable copy
 # lives in the row's `config` below; keep the two in sync. The persona keeps
 # `complete: true` semantics (the picked text IS the whole system prompt: no
 # tool guidance, no skill catalog, no harness identity) and runtime-context
@@ -42,7 +42,7 @@
           # `model-persona.mjs` replaces the `@deepseek-ai/dsh-persona` row:
           # it picks the persona text per session model and makes it the
           # complete system prompt. The `config` below is the machine-readable
-          # copy of `presets/model-personas.md` (keep the two in sync).
+          # copy of `presets/chat-agent/model-personas.md` (keep the two in sync).
           - id: model-persona
             name: 'dsh-more-agent-presets/presets/chat-agent/model-persona.mjs'
             config:

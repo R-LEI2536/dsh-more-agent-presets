@@ -55,7 +55,7 @@ A port of the open-source Codex CLI agent prompt: it states what it is about to 
 
 ### General Chat Mode (`chat-agent`)
 
-A pure-conversation assistant: its **tool catalog is empty** — it mounts no tool row and masks every inherited tool through a preset-plane `ctx.tools.restrict({ allow: [] })` — so it can only talk: it cannot read or write files, run commands, or search the web. **The system prompt switches with the current model** (Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 texts; the verbatim table lives in `presets/model-personas.md`), and the picked text is the session's **entire** prompt. Automatic (context pressure / overflow) compaction and the human `/compact` command stay on, because a chat session is long by nature. Use it when you want a conversation partner rather than an agent that acts on your machine.
+A pure-conversation assistant: its **tool catalog is empty** — it mounts no tool row and masks every inherited tool through a preset-plane `ctx.tools.restrict({ allow: [] })` — so it can only talk: it cannot read or write files, run commands, or search the web. **The system prompt switches with the current model** (Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 texts; the verbatim table lives in `presets/chat-agent/model-personas.md`), and the picked text is the session's **entire** prompt. Automatic (context pressure / overflow) compaction and the human `/compact` command stay on, because a chat session is long by nature. Use it when you want a conversation partner rather than an agent that acts on your machine.
 
 ## Design Philosophy
 

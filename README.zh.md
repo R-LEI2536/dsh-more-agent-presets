@@ -55,7 +55,7 @@
 
 ### 通用聊天模式 (`chat-agent`)
 
-纯聊天助手：**工具目录为空**——不挂任何工具行，并通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽继承得来的工具，因此它只能对话——不能读写文件、不能执行命令、不能联网搜索。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 文案，表源见 `presets/model-personas.md`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
+纯聊天助手：**工具目录为空**——不挂任何工具行，并通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽继承得来的工具，因此它只能对话——不能读写文件、不能执行命令、不能联网搜索。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 文案，表源见 `presets/chat-agent/model-personas.md`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
 
 ## 设计理念
 
