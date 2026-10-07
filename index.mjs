@@ -25,7 +25,7 @@
  *     broken ("声明的入口产物缺失…") and refuses market installs and updates
  *     with "updated build has no loadable entry".
  *
- * Mounting the row adds nothing to the composition: the five presets come from
+ * Mounting the row adds nothing to the composition: the six presets come from
  * the declared patch layers, never from this module.
  */
 

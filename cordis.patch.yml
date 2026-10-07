@@ -1,7 +1,7 @@
 # dsh-more-agent-presets — declarative agent preset bundle for DSH 0.2.0-rc.1+.
 #
 # This file is the bundle's first patch layer. It declares the bundle's OWN
-# loader row; the five agent presets follow in the ordered patch files listed in
+# loader row; the six agent presets follow in the ordered patch files listed in
 # package.json `dsh.bundle.patch` (`presets/<id>.patch.yml`), one
 # `@deepseek-ai/dsh-agent-preset` declaration each.
 #
@@ -13,7 +13,7 @@
 # this one, and dshmarket's liveness check (`liveIncludes`) looks for a live
 # loader entry named after the package. Without this row the plugin manager
 # reports "已安装，重启后生效" on every page load — restart or not — while the
-# five presets are in fact composed and working.
+# six presets are in fact composed and working.
 #
 # The row's plugin (`index.mjs`) is a documented no-op: this bundle has no
 # host-side code, so the row contributes nothing to the composition beyond
