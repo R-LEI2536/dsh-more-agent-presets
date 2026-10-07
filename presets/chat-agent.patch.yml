@@ -1,13 +1,15 @@
 # Agent preset chat-agent: one `@deepseek-ai/dsh-agent-preset` declaration.
 #
 # A pure-conversation preset: its `config.plugins` list contains NO model-facing
-# tool row, so the preset contributes no tool itself. The `no-tools` row masks
-# the INHERITED tool surface for these agents -- `ctx.tools.restrict({ allow: [] })`
-# called from the preset's standing scope (the scope every selecting Agent is
-# parented to) hides the deployment-global tool layer (`present`,
-# `plugin_manager`, a profile's extra host tool plugins), so the catalog is empty
-# on any profile, not only the shipped Web deployment. See CHANGELOG 1.6.0 Notes.
-# Do not "complete" this list with tool rows.
+# tool row, so the preset contributes no tool itself. The `no-tools` row covers
+# both tool planes for these agents -- `ctx.tools.restrict({ allow: [] })` from
+# the preset's standing scope (the scope every selecting Agent is parented to)
+# masks the INHERITED surface, i.e. the deployment-global tool layer (`present`,
+# `plugin_manager`, a profile's extra host tool plugins), and
+# `ctx.tools.guard(...)` refuses execution of anything registered in the agent's
+# OWN scope, which no restriction can reach (Team tools on a profile that mounts
+# `@deepseek-ai/dsh-experimental-agent-team-profile` still get LISTED -- see
+# `no-tools.mjs` and CHANGELOG 1.6.1). Do not "complete" this list with tool rows.
 #
 # The persona comes from `model-persona.mjs` (it replaces the
 # `@deepseek-ai/dsh-persona` row): the text is picked per session model -- the
@@ -37,7 +39,7 @@
         name: "通用聊天模式"
         description: "纯聊天助手：不调用任何工具，只专注对话本身。"
         plugins:
-          # `no-tools.mjs` hides every tool these agents inherit (see header).
+          # `no-tools.mjs` masks the inherited plane and refuses the rest (header).
           - id: no-tools
             name: 'dsh-more-agent-presets/presets/chat-agent/no-tools.mjs'
 

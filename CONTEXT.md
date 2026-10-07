@@ -21,7 +21,7 @@ profile 级作用域，拥有共享服务（会话、token meter、沙箱策略�
 _Avoid_: 全局、core
 
 **Zero-tool preset**:
-子插件列表中不含任何模型可见工具行的 preset；它的 agent 只能对话，不能产生动作。目录侧由 preset 层的 tool mask（`ctx.tools.restrict({ allow: [] })`）保证为空；agent 自己 scope 注册的工具（如 Team 工具）按设计不受影响。
+子插件列表中不含任何模型可见工具行的 preset；它的 agent 只能对话，不能产生动作。**继承面**由 preset 层的 tool mask（`ctx.tools.restrict({ allow: [] })`）清空；agent 自身 scope 的注册（如 Team 工具）不受任何 restriction 影响——它们仍会出现在工具目录里，靠同层 `ctx.tools.guard(...)` 拒绝执行兜底。
 _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久 shell）
 
 **Model persona**:

@@ -55,7 +55,7 @@
 
 ### 通用聊天模式 (`chat-agent`)
 
-纯聊天助手：**工具目录为空**——不挂任何工具行，并通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽继承得来的工具，因此它只能对话——不能读写文件、不能执行命令、不能联网搜索。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 文案，表源见 `presets/chat-agent/model-personas.md`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
+纯聊天助手：不挂任何工具行，通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽**继承得来**的工具，并用 `ctx.tools.guard(...)` 拒绝执行注册在 **agent 自身 scope** 里的工具——因此它不能产生动作：不能读写文件、不能执行命令、不能联网搜索、也不能创建队友。两条边界是刻意的，机制与源码指引写在 `presets/chat-agent/no-tools.mjs`：其一，preset 层的 restriction 只覆盖继承面（全局层 + 每个祖先 scope），agent 自身 scope 的注册天然豁免，所以挂了这类插件的 profile（例如 `@deepseek-ai/dsh-experimental-agent-team-profile`，它的 9 个 Team 工具会注册进**每个** root agent 的 `agent.ctx`）下，那些工具**仍会列在**该会话的工具目录里，guard 负责让它们的调用返回拒绝而不是真的执行；其二，这个拒绝与「已被过滤的工具」返回的 `unknown tool` 不是同一种。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 文案，表源见 `presets/chat-agent/model-personas.md`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
 
 ## 设计理念
 
