@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.1] - 2026-10-07
+
+### Fixed (chat-agent picked the generic persona for every Web UI session)
+
+- **`model-persona.mjs` read the model from `agent.options.model`, which on a Web UI Session is the PROFILE DEFAULT — not the model in the picker — so no `personas` row matched and every session got the table's `default` text.** A GUI Session is created before the pick reaches the Agent: the API session controller builds it with `agentOptions: this.agentOptions()` = `ctx.agentDefaultModel.currentSelection()` (`packages/api/session-controller/src/agent.ts:497-500`), while the picker's choice arrives as a `model/selection` event (`commands.ts:151-176` `selectModel` → `selectForNextRequest`, `agent.ts:333-336`) and is resolved for the next request as `pending ?? lastUsed` of the Session's `modelSelection` projection (`agent.ts:286-310` `selectionFor`). Observed live in the `web` profile (default `opencode-chat/deepseek-v4.1-flash`): a `chat-agent` session whose picker showed **GPT-6 Luna** rendered the `default` text ("You are a helpful AI assistant…") although its request went to `daseinai/gpt-6-luna` (`~/.dsh/storages/session_projcache/sessions/session-f78e4ed5-173a-4549-b0f2-96dbbbbafb2b.json`: `agentPreset: chat-agent`, `modelSelection.lastUsed: {daseinai, gpt-6-luna}`).
+- **New `sessionModel(ctx, agent)` is the single place that answers "which model id".** It reads `pending ?? lastUsed` of the `modelSelection` projection through an optional `ctx.get('sessionProjections')` (undefined when that unit is not registered — `packages/session/session-projection/src/index.ts:319-327`), then falls back to `agent.options.model`, which IS the entry-point model where nothing is projected (headless `packages/bundle/headless/src/index.ts:332-340`, ACP `packages/acp/acp/src/model-control.ts:44-59`) and for any profile-default session. No new dependency (the projection is read through the service registry, not imported), and `pickPersona()` — exact alias, else longest prefix, else `default` — is unchanged.
+- **`check-model-persona.mjs` (new, repository root) makes that fact runnable: `node check-model-persona.mjs`.** It extracts the table from the shipped `presets/chat-agent.patch.yml` config and asserts the 1.6.1 behavior: with the projection pending on `gpt-6-luna` (and again with the pick consumed into `lastUsed`) the picked text is the Codex GPT-5 row, the entry-point fallback still selects the `gpt-6-sol` row, and an unrelated or absent model id falls to `default`. It is not listed in `files`, so it does not ship.
+- Docs: the `chat-agent.patch.yml` header, `presets/chat-agent/model-personas.md` (语义), and `CONTEXT.md`'s **Model persona** entry now name the model source instead of claiming `agent.options.model`.
+- `package.json`: `version` 1.6.0 → 1.6.1. No other field changed — same `dsh.bundle.patch` list, `exports`, `files`, and dependency maps; the persona table and the two READMEs' claims ("the system prompt switches with the current model") are unchanged, because they now hold.
+
+### Notes
+
+- **A workspace edit alone does not reach the reported GUI.** The `web` profile installs this bundle from `github:R-LEI2536/dsh-more-agent-presets#b7936d43…`, and its `node_modules` copy is 1.6.0, so the fix needs a push plus a profile update and restart (or a profile that points at this working tree).
+- **A `complete: true` section cannot take its text from the `{{model}}` variable.** `assemble()` evaluates a function `text` at `:596-611` and restores the pre-waterfall snapshot of a complete section at `:629-634` (`packages/core/system-prompt/src/index.ts`), while the model variable is overridden by `installModelSelection` *inside* that waterfall (`packages/core/agent/src/model-selection.ts:82-95`). The Session's own selection state is therefore the only readable source; do not "simplify" this back to `agent.options.model`, to a `{{model}}` reference, or to a waterfall rewrite of the section text.
+
 ## [1.6.0] - 2026-10-07
 
 ### Added (a sixth preset: zero-tool pure chat)

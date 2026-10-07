@@ -10,8 +10,10 @@
 # Do not "complete" this list with tool rows.
 #
 # The persona comes from `model-persona.mjs` (it replaces the
-# `@deepseek-ai/dsh-persona` row): the text is picked per session model from the
-# verbatim table in `presets/chat-agent/model-personas.md` -- the machine-readable copy
+# `@deepseek-ai/dsh-persona` row): the text is picked per session model -- the
+# model the Session selected (`pending ?? lastUsed` of its `modelSelection`
+# projection, else `agent.options.model`) -- from the verbatim table in
+# `presets/chat-agent/model-personas.md` -- the machine-readable copy
 # lives in the row's `config` below; keep the two in sync. The persona keeps
 # `complete: true` semantics (the picked text IS the whole system prompt: no
 # tool guidance, no skill catalog, no harness identity) and runtime-context

@@ -8,7 +8,10 @@ persona 行开了 `complete: true`，被选中的文本就是该会话的**全�
 
 ## 语义
 
-- **key = 模型 id**（即 `agent.options.model` 的值）。
+- **key = 模型 id**：会话为「下一次请求」选定的模型。Web UI 的 agent 是拿 profile 默认模型创建的
+  （`agentOptions`），picker 的选择以 `model/selection` 事件进会话，所以 key 取 `modelSelection`
+  投影的 `pending ?? lastUsed` —— 也就是 harness 自己在 `selectionFor` 里用的顺序；没有该投影的
+  部署（headless / ACP）才回落到 `agent.options.model`。
 - 匹配大小写不敏感，且先剥掉 provider 前缀：`gpt-6-luna`、`openai.gpt-6-luna`、
   `global.openai.gpt-6-luna` 命中同一行（取最后一个 `.` 之后的段再比）。
 - 先精确命中 key；否则取**最长**的一条「候选模型 id 以其为前缀」的 key —— 所以

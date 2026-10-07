@@ -25,7 +25,9 @@ _Avoid_: 全局、core
 _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久 shell）
 
 **Model persona**:
-按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。唯一真源在 `presets/chat-agent/model-personas.md`，patch 内嵌副本需两处同步。
+按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。模型 id 取**会话选定**
+的那一个（`modelSelection` 投影的 `pending ?? lastUsed`，无投影时回落 `agent.options.model`），不取
+agent 创建时的 profile 默认值。唯一真源在 `presets/chat-agent/model-personas.md`，patch 内嵌副本需两处同步。
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
