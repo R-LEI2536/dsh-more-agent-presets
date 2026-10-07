@@ -1,6 +1,6 @@
 {
   "name": "dsh-more-agent-presets",
-  "version": "1.5.3",
+  "version": "1.6.0",
   "description": "多个可选择的 DeepSeek Harness Agent Presets 集合（声明式 preset bundle，DSH 0.2.0-rc.1+）",
   "type": "module",
   "main": "./index.mjs",
@@ -24,7 +24,8 @@
         "./presets/iflow-coding-agent.patch.yml",
         "./presets/iflow-cre-agent.patch.yml",
         "./presets/pair-coding-agent.patch.yml",
-        "./presets/qwencode-coding-agent.patch.yml"
+        "./presets/qwencode-coding-agent.patch.yml",
+        "./presets/chat-agent.patch.yml"
       ]
     }
   },

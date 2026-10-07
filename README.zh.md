@@ -53,6 +53,10 @@
 
 移植开源 Codex CLI 的 agent 提示词：每次工具调用前先说明要做什么、先读代码再动手、自主把任务推进到完成，并沿用 Codex 的规划、验证与最终答复格式规范。工具名已映射到本 harness 的工具（`apply_patch` → `edit`/`write`，`update_plan` → `todo_write`，`request_user_input` → `ask_user_question`），Codex 的计划模式协议通过 `exit_plan_mode` 保留。Codex 的三块 `input[]`——`<permissions instructions>`、`<collaboration_mode>`、`<environment_context>`——通过三个 DSH `agent/pre-step` 插件（`codex-permissions.mjs`、`codex-collab-mode.mjs`、`codex-environment.mjs`）作为 user-role 消息注入到每步准入输入的头部，沙箱/审批策略和 cwd/platform/shell/日期实时从 DSH 运行时解析。与这里其他 preset 不同，它保留的是 Codex 的自主推进姿态，而非先讨论后动手。
 
+### 通用聊天模式 (`chat-agent`)
+
+纯聊天助手：**工具目录为空**——不挂任何工具行，并通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽继承得来的工具，因此它只能对话——不能读写文件、不能执行命令、不能联网搜索。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 文案，表源见 `presets/model-personas.md`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
+
 ## 设计理念
 
 这些 preset 在用户交互和规划方式上与 DSH 默认 prompt 有所不同：
@@ -85,18 +89,18 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 重启 Web profile，然后在创建会话时选择 preset。
 
-本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 5 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
+本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 6 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
 
 ## 行为说明
 
 **声明式 preset（DSH 0.1.7+）：**
 - 每个 preset 是一行声明在 bundle patch 中的 `@deepseek-ai/dsh-agent-preset`；`config.plugins` 持有子插件行（工具、提示段、带 `isolate` realm 的组，以及以包子路径 `dsh-more-agent-presets/presets/<id>/` 引用的本插件内嵌 `.mjs` 插件）。
-- preset `id`（`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
+- preset `id`（`chat-agent`、`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
 - registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 
 **多文件 patch、bundle 自身那一行，与根入口产物：**
-- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 6 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
-- `cordis.patch.yml` 声明的是这个 bundle **自身**的 loader 行（`id`/`name` 都是 `dsh-more-agent-presets`），`index.mjs` 是它背后的空插件。这一行才是让 bundle 出现在运行中组合里的东西，也是每个 bundle 给自身声明行的固定做法（`dshmarket` 插的是 `dsh-market` / `dshmarket`；`@deepseek-ai/dsh-web-app` 插的是 `web-runtime` / `@deepseek-ai/dsh-web-app`）。缺了它，`dshmarket` 的存活判定（`liveIncludes`）无从匹配——5 个 preset 行的 `name` 是 `@deepseek-ai/dsh-agent-preset`——插件管理器于是每次打开页面都显示*「已安装，重启后生效」*，重启也不例外，而 5 个 preset 其实一直是好的。
+- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 7 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
+- `cordis.patch.yml` 声明的是这个 bundle **自身**的 loader 行（`id`/`name` 都是 `dsh-more-agent-presets`），`index.mjs` 是它背后的空插件。这一行才是让 bundle 出现在运行中组合里的东西，也是每个 bundle 给自身声明行的固定做法（`dshmarket` 插的是 `dsh-market` / `dshmarket`；`@deepseek-ai/dsh-web-app` 插的是 `web-runtime` / `@deepseek-ai/dsh-web-app`）。缺了它，`dshmarket` 的存活判定（`liveIncludes`）无从匹配——6 个 preset 行的 `name` 是 `@deepseek-ai/dsh-agent-preset`——插件管理器于是每次打开页面都显示*「已安装，重启后生效」*，重启也不例外，而 6 个 preset 其实一直是好的。
 - 部分第三方工具只识别字符串形式，并按「声明的根入口产物」判断已安装的构建是否可加载。`index.mjs`（通过 `main`、`exports["."]` 声明，并由 `files` 打进产物）既是为了让这项检查看到一个真实产物，也是为了让上面那一行有个真正的插件可挂。
 - **不要删除那一行自身行，也不要删除 `index.mjs`、`main` 或 `exports["."]`。** 缺了它们，插件管理器会把本插件标成损坏（*「已安装，校验未通过／声明的入口产物缺失」*）、拒绝安装或更新（*「updated build has no loadable entry」*），或者永远显示「重启后生效」——尽管 DSH 本身能正常加载这个 bundle。
 
@@ -114,7 +118,7 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 dsh plugin --profile web remove dsh-more-agent-presets
 ```
 
-卸载 bundle 会移除它的 patch 层，5 行 preset 声明随之从 profile 消失；安装在 profile node_modules 下的 preset `plugins` 资源随包移除。0.1.7+ 无需清理 `~/.dsh/.agent-presets`（若从 ≤1.4.x 迁移，参见上方「行为说明」）。
+卸载 bundle 会移除它的 patch 层，6 行 preset 声明随之从 profile 消失；安装在 profile node_modules 下的 preset `plugins` 资源随包移除。0.1.7+ 无需清理 `~/.dsh/.agent-presets`（若从 ≤1.4.x 迁移，参见上方「行为说明」）。
 
 ## 许可证
 

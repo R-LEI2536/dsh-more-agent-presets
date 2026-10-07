@@ -1,0 +1,83 @@
+# Agent preset chat-agent: one `@deepseek-ai/dsh-agent-preset` declaration.
+#
+# A pure-conversation preset: its `config.plugins` list contains NO model-facing
+# tool row, so the preset contributes no tool itself. The `no-tools` row masks
+# the INHERITED tool surface for these agents -- `ctx.tools.restrict({ allow: [] })`
+# called from the preset's standing scope (the scope every selecting Agent is
+# parented to) hides the deployment-global tool layer (`present`,
+# `plugin_manager`, a profile's extra host tool plugins), so the catalog is empty
+# on any profile, not only the shipped Web deployment. See CHANGELOG 1.6.0 Notes.
+# Do not "complete" this list with tool rows.
+#
+# The persona comes from `model-persona.mjs` (it replaces the
+# `@deepseek-ai/dsh-persona` row): the text is picked per session model from the
+# verbatim table in `presets/model-personas.md` -- the machine-readable copy
+# lives in the row's `config` below; keep the two in sync. The persona keeps
+# `complete: true` semantics (the picked text IS the whole system prompt: no
+# tool guidance, no skill catalog, no harness identity) and runtime-context
+# suppression (no `Current runtime context` user-role snapshot and no
+# `context()` blocks), which the plugin performs as its two calls.
+#
+# The compaction group keeps automatic (pressure / context-overflow) compaction
+# and the human `/compact` command: a chat session is long by nature. It omits
+# `tool-result-pruner` on purpose -- with no tool rows there are no tool results
+# to prune, and `compaction-basic` reads `toolResultPruner` through an optional
+# `ctx.get`, so the group composes without it.
+#
+# A pure `insert` with no `!!js` expression: the `config` is static data (the
+# verbatim table), so nothing here is platform- or environment-conditional.
+- insert:
+    - id: preset-chat-agent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: chat-agent
+        order: 15
+        name: "通用聊天模式"
+        description: "纯聊天助手：不调用任何工具，只专注对话本身。"
+        plugins:
+          # `no-tools.mjs` hides every tool these agents inherit (see header).
+          - id: no-tools
+            name: 'dsh-more-agent-presets/presets/chat-agent/no-tools.mjs'
+
+          # `model-persona.mjs` replaces the `@deepseek-ai/dsh-persona` row:
+          # it picks the persona text per session model and makes it the
+          # complete system prompt. The `config` below is the machine-readable
+          # copy of `presets/model-personas.md` (keep the two in sync).
+          - id: model-persona
+            name: 'dsh-more-agent-presets/presets/chat-agent/model-persona.mjs'
+            config:
+              {
+                "default": "You are a helpful AI assistant.\nYou provide accurate, concise, and useful responses.\nYou follow the user's instructions.\nIf you are unsure, say so. Do not fabricate information.",
+                "personas": [
+                  {
+                    "model": ["gpt-6-luna", "gpt-5.6-luna"],
+                    "text": "You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled."
+                  },
+                  {
+                    "model": ["gpt-6-sol", "gpt-5.6-sol"],
+                    "text": "You are Codex, a coding agent based on GPT-6. You and the user share the same workspace and collaborate to achieve the user's goals."
+                  },
+                  {
+                    "model": ["qwen"],
+                    "text": "You are Qwen, created by Alibaba Cloud. You are a helpful AI assistant.\nYou provide accurate, concise, and useful responses.\nYou follow the user's instructions.\nIf you are unsure, say so. Do not fabricate information."
+                  },
+                  {
+                    "model": ["deepseek-r1", "deepseek-reasoner"],
+                    "text": "You are DeepSeek-R1, an AI assistant created exclusively by the Chinese Company DeepSeek. You'll provide helpful, harmless, and detailed responses to all user inquiries. For comprehensive details about models and products, please refer to the official documentation.\n\nYour role as an assistant involves thoroughly execute tasks through a systematic long thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process."
+                  }
+                ]
+              }
+
+          # `token-meter` stays host-plane and is resolved from here; only the
+          # compaction provider and its only consumer (`command-compact`) share
+          # this realm.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'

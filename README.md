@@ -53,6 +53,10 @@ A coding assistant that works alongside the user as a pair programmer: aligns di
 
 A port of the open-source Codex CLI agent prompt: it states what it is about to do before each tool call, reads the codebase before editing, and drives the task to completion on its own, following Codex's planning, validation, and final-answer formatting rules. Tool names are mapped to this harness's tools (`apply_patch` → `edit`/`write`, `update_plan` → `todo_write`, `request_user_input` → `ask_user_question`), and Codex's plan-mode protocol is preserved through `exit_plan_mode`. The three Codex `input[]` blocks — `<permissions instructions>`, `<collaboration_mode>`, and `<environment_context>` — are injected as user-role messages at the head of every admitted step via three DSH `agent/pre-step` plugins (`codex-permissions.mjs`, `codex-collab-mode.mjs`, `codex-environment.mjs`), with the live sandbox / approval policy and cwd / platform / shell / date resolved from the DSH runtime. Unlike the other presets here, this one keeps Codex's autonomous posture rather than a discussion-first one.
 
+### General Chat Mode (`chat-agent`)
+
+A pure-conversation assistant: its **tool catalog is empty** — it mounts no tool row and masks every inherited tool through a preset-plane `ctx.tools.restrict({ allow: [] })` — so it can only talk: it cannot read or write files, run commands, or search the web. **The system prompt switches with the current model** (Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 texts; the verbatim table lives in `presets/model-personas.md`), and the picked text is the session's **entire** prompt. Automatic (context pressure / overflow) compaction and the human `/compact` command stay on, because a chat session is long by nature. Use it when you want a conversation partner rather than an agent that acts on your machine.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:
@@ -85,18 +89,18 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 Restart the Web profile, then select the preset when creating a session.
 
-The plugin is a **declarative preset bundle**: installing it adds five `@deepseek-ai/dsh-agent-preset` declaration rows to the profile through `dsh.bundle.patch` (one per preset, in `presets/<id>.patch.yml`). The declaration rows are registered with `@deepseek-ai/dsh-agent-preset-registry` and appear in the preset picker automatically. The plugin writes nothing to the user directory — no files are copied anywhere.
+The plugin is a **declarative preset bundle**: installing it adds six `@deepseek-ai/dsh-agent-preset` declaration rows to the profile through `dsh.bundle.patch` (one per preset, in `presets/<id>.patch.yml`). The declaration rows are registered with `@deepseek-ai/dsh-agent-preset-registry` and appear in the preset picker automatically. The plugin writes nothing to the user directory — no files are copied anywhere.
 
 ## Behavior Notes
 
 **Declarative presets (DSH 0.1.7+):**
 - Each preset is a `@deepseek-ai/dsh-agent-preset` row declared in a bundle patch; `config.plugins` holds the child plugin rows (tools, prompt sections, groups with `isolate` realms, and the plugin's inline `.mjs` plugins referenced as package subpath exports under `dsh-more-agent-presets/presets/<id>/`).
-- Preset `id` values (`codex-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent`, `qwencode-coding-agent`) are unchanged from previous releases, so existing session selections keep working.
+- Preset `id` values (`chat-agent`, `codex-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent`, `qwencode-coding-agent`) are unchanged from previous releases, so existing session selections keep working.
 - The registry retains each declaration's composition for live sessions; editing a declaration affects subsequently created Agents.
 
 **Multi-file patch, the bundle's own row, and the root entry artifact:**
-- `dsh.bundle.patch` is an **ordered list** (`cordis.patch.yml` plus one `presets/<id>.patch.yml` per preset) — the array form DSH core supports. A host composes all six layers and, because this is a bundle, activation happens on the next start, not on hot mount.
-- `cordis.patch.yml` declares the bundle's **own** loader row (`id`/`name`: `dsh-more-agent-presets`), and `index.mjs` is the no-op plugin behind it. That row is what makes the bundle visible in the running composition, and it is the shape every bundle uses for itself (`dshmarket` inserts `dsh-market` / `dshmarket`; `@deepseek-ai/dsh-web-app` inserts `web-runtime` / `@deepseek-ai/dsh-web-app`). Without it, `dshmarket`'s liveness check (`liveIncludes`) has nothing to match — the five preset rows are named `@deepseek-ai/dsh-agent-preset` — and the plugin manager reports *"已安装，重启后生效"* on every page load, restart or not, while the presets keep working.
+- `dsh.bundle.patch` is an **ordered list** (`cordis.patch.yml` plus one `presets/<id>.patch.yml` per preset) — the array form DSH core supports. A host composes all seven layers and, because this is a bundle, activation happens on the next start, not on hot mount.
+- `cordis.patch.yml` declares the bundle's **own** loader row (`id`/`name`: `dsh-more-agent-presets`), and `index.mjs` is the no-op plugin behind it. That row is what makes the bundle visible in the running composition, and it is the shape every bundle uses for itself (`dshmarket` inserts `dsh-market` / `dshmarket`; `@deepseek-ai/dsh-web-app` inserts `web-runtime` / `@deepseek-ai/dsh-web-app`). Without it, `dshmarket`'s liveness check (`liveIncludes`) has nothing to match — the six preset rows are named `@deepseek-ai/dsh-agent-preset` — and the plugin manager reports *"已安装，重启后生效"* on every page load, restart or not, while the presets keep working.
 - Some third-party tooling only understands the string form of `dsh.bundle.patch`, and judges an installed build by its declared root entry artifact. `index.mjs` — declared through `main` and `exports["."]` and shipped via `files` — exists so that check sees a real artifact and so the row above has a plugin behind it.
 - **Do not remove the self row, `index.mjs`, `main`, or `exports["."]`.** Without them the plugin manager reports the plugin as broken (*"已安装，校验未通过 / the declared entry artifact is missing"*), refuses to install or update it (*"updated build has no loadable entry"*), or shows it as permanently pending a restart — even though DSH itself loads the bundle correctly.
 
@@ -114,7 +118,7 @@ The plugin is a **declarative preset bundle**: installing it adds five `@deepsee
 dsh plugin --profile web remove dsh-more-agent-presets
 ```
 
-Removing the bundle removes its patch layer, so the five preset declarations disappear from the profile. The preset `plugins` assets installed under the profile's node_modules are removed with the package. No `~/.dsh/.agent-presets` cleanup is needed on 0.1.7+ (see Behavior Notes if you are migrating from ≤1.4.x).
+Removing the bundle removes its patch layer, so the six preset declarations disappear from the profile. The preset `plugins` assets installed under the profile's node_modules are removed with the package. No `~/.dsh/.agent-presets` cleanup is needed on 0.1.7+ (see Behavior Notes if you are migrating from ≤1.4.x).
 
 ## License
 
