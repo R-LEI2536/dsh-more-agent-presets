@@ -38,9 +38,10 @@
  * inlining its text (`{ "model": [...], "file": "ref/gemini.md" }`), which
  * `resolveRefs()` reads from this directory at load:
  *
- *   - key = the Session's selected model id (`sessionModel()`), matched
- *     case-insensitively after stripping the provider prefix (the segment after
- *     the last `.`);
+ *   - key = the Session's selected model id (`sessionModel()`), lower-cased and
+ *     matched as written AND as every suffix after a `.` — a provider path may
+ *     be prepended (`daseinai.gemini-3.8-flash`) while the model's own name may
+ *     contain a dot (`gemini-3.7-flash`), so one split rule cannot cover both;
  *   - exact alias match first; otherwise the LONGEST alias that is a prefix of
  *     the key (`qwen3-coder` hits `qwen`, `deepseek-r1-0528` hits
  *     `deepseek-r1`); otherwise the `default` entry. A bare `deepseek` alias
@@ -134,22 +135,36 @@ export function sessionModel(ctx, agent) {
   return (state?.pending ?? state?.lastUsed)?.model ?? agent?.options?.model
 }
 
+/**
+ * Every way one model id can be written: as given, plus each suffix after a `.`. A deployment may
+ * prepend a provider path (`daseinai.gemini-3.8-flash`) while the model's own name may contain a
+ * dot too (`gemini-3.7-flash`), so no single split rule covers both.
+ * @param modelId - the Session's selected model id, or undefined.
+ * @returns the lower-cased candidate keys, longest first (empty when no id is known).
+ */
+function modelKeys(modelId) {
+  const full = modelId ? String(modelId).trim().toLowerCase() : ''
+  if (full === '') return []
+  const parts = full.split('.')
+  return parts.map((_, index) => parts.slice(index).join('.'))
+}
+
 /** Pick the persona text for one model id from the resolved table (every row carries `text`). */
 export function pickPersona(modelId, table) {
-  const key = modelId ? String(modelId).split('.').pop().trim().toLowerCase() : ''
+  const keys = modelKeys(modelId)
   const aliases = []
   for (const row of table?.personas ?? []) {
     if (row === null || typeof row !== 'object' || !Array.isArray(row.model) || typeof row.text !== 'string') continue
     for (const raw of row.model) {
       const alias = String(raw).trim().toLowerCase()
       if (alias === '') continue
-      if (alias === key) return row.text
+      if (keys.includes(alias)) return row.text
       aliases.push({ alias, text: row.text })
     }
   }
   let best
   for (const { alias, text } of aliases) {
-    if (key.startsWith(alias) && (best === undefined || alias.length > best.alias.length)) best = { alias, text }
+    if (keys.some(entry => entry.startsWith(alias)) && (best === undefined || alias.length > best.alias.length)) best = { alias, text }
   }
   return best ? best.text : (typeof table?.default === 'string' ? table.default : '')
 }

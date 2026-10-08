@@ -8,7 +8,10 @@
  * table is loaded through the plugin's own `personaTable()`, so a missing or
  * malformed `presets/chat-agent/model-personas.json` — the single shipped copy
  * of the table — fails here too, as does a `file` row whose reference escapes
- * the plugin directory. Not in `files`, so it never ships.
+ * the plugin directory. It also pins the two Gemini bodies: each model id
+ * matches its own file-backed row, and neither body may carry an XML tag, tool
+ * name or component name — the vocabulary the adaptation deleted. Not in
+ * `files`, so it never ships.
  */
 
 import assert from 'node:assert/strict'
@@ -35,6 +38,11 @@ assert.match(
   /^You are Codex, an agent based on GPT-5/,
 )
 
+// A dot inside the model's own name is not a provider prefix: `gpt-5.6-luna` is its own alias, and
+// a prepended provider path still lands on the same row.
+assert.match(pickPersona('gpt-5.6-luna', table), /^You are Codex, an agent based on GPT-5/)
+assert.match(pickPersona('global.openai.gpt-6-luna', table), /^You are Codex, an agent based on GPT-5/)
+
 // No projection (headless / ACP): the entry-point model still decides.
 assert.match(
   pickPersona(sessionModel(ctxWith(undefined), agentWith('gpt-6-sol')), table),
@@ -54,5 +62,20 @@ assert.equal(pickPersona('fake-model', resolved), resolved.personas[0].text)
 assert.throws(() => refText('../package.json'))
 assert.throws(() => refText('/etc/hostname'))
 assert.throws(() => refText(''))
+
+// The two Gemini bodies: each is one capture's adaptation, matched by its own model id (the
+// provider prefix is stripped before matching, so `daseinai.gemini-3.8-flash` hits the same row
+// as the bare id).
+assert.match(pickPersona('gemini-3.7-flash', table), /^You are Gemini\./)
+assert.match(pickPersona('gemini-3.7-flash', table), /RULE 1: CLARIFICATION FIRST/)
+assert.match(pickPersona('daseinai.gemini-3.8-flash', table), /^You are Gemini\./)
+assert.match(pickPersona('daseinai.gemini-3.8-flash', table), /For straightforward, unambiguous queries/)
+
+// The adaptation policy is a property of EACH body, not a comparison between them: no XML tag,
+// tool name or component vocabulary may survive the edit that deleted those sections.
+const ADAPTATION_LEFTOVERS = /<\/?[A-Za-z]|image_agent|web_search|web_fetch|google:search|expand_tools|image_generation_tool|web_code_canvas|Basekit|component_library|surface_constraints|lmdx|ElicitationsGroup/
+for (const model of ['gemini-3.7-flash', 'gemini-3.8-flash']) {
+  assert.doesNotMatch(pickPersona(model, table), ADAPTATION_LEFTOVERS, `${model} body carries an adaptation leftover`)
+}
 
 console.log('check-model-persona: ok')
