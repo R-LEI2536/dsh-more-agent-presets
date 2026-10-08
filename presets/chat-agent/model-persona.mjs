@@ -32,8 +32,11 @@
  * nothing is projected (headless `bundle/headless/src/index.ts:332-340`, ACP
  * `acp/src/model-control.ts:44-59`) and for any profile-default session.
  *
- * Table of contents (the verbatim source is `presets/chat-agent/model-personas.md`; the
- * `config` of this row is its machine-readable copy — keep the two in sync):
+ * The verbatim text is `presets/chat-agent/model-personas.json`, which
+ * `personaTable()` reads at apply time; this row carries no `config`, so there
+ * is no second copy to keep in sync. A row may name a Markdown body instead of
+ * inlining its text (`{ "model": [...], "file": "ref/gemini.md" }`), which
+ * `resolveRefs()` reads from this directory at load:
  *
  *   - key = the Session's selected model id (`sessionModel()`), matched
  *     case-insensitively after stripping the provider prefix (the segment after
@@ -43,13 +46,76 @@
  *     `deepseek-r1`); otherwise the `default` entry. A bare `deepseek` alias
  *     would swallow `deepseek-v4.1-flash` — the source document forbids it.
  *
- * Text is used verbatim; `\n` inside the double-quoted YAML scalars of the
- * config is a real newline (YAML double-quoted escape).
+ * Text is used verbatim; `\n` inside a JSON string is a real newline.
  */
+
+import { readFileSync } from 'node:fs'
 
 export const name = 'chat-agent/model-persona'
 
 export const inject = ['systemPrompt']
+
+/** This plugin's directory: the base every `file` reference resolves against. */
+const DIR_URL = new URL('./', import.meta.url)
+
+/** The single copy of the model→text table, beside this plugin. */
+const TABLE_URL = new URL('./model-personas.json', import.meta.url)
+
+let cachedTable
+
+/**
+ * Read one `file` reference to its text, resolved against this plugin's
+ * directory. Absolute paths and `..` escapes are refused, so the table cannot
+ * point at anything outside the preset; the text is trimmed, because the file
+ * is the whole system prompt and a trailing newline is not part of it.
+ * @param ref - a relative path, e.g. `ref/gemini.md`.
+ * @returns the referenced file's trimmed text.
+ */
+export function refText(ref) {
+  const url = new URL(ref, import.meta.url)
+  if (ref === '' || !url.href.startsWith(DIR_URL.href)) {
+    throw new Error(`model-persona: file must be a relative path inside ${DIR_URL.pathname}: ${JSON.stringify(ref)}`)
+  }
+  return readFileSync(url, 'utf8').trim()
+}
+
+/**
+ * Resolve every `file` row of a raw table into its `text`, in place.
+ *
+ * A row may carry its text inline (`text`) or as a path to a Markdown body
+ * (`file`, which wins) — a long multi-paragraph prompt is unreadable as a
+ * `\n`-escaped JSON string. Resolving here, once, keeps `pickPersona()` a pure
+ * function over `text` strings and keeps a broken reference a MOUNT failure
+ * rather than a per-request throw inside the section's `text` function.
+ * @param table - the parsed `{ default, personas[] }` table.
+ * @returns the same table, with every `file` row replaced by its `text`.
+ */
+export function resolveRefs(table) {
+  for (const row of table?.personas ?? []) {
+    if (row === null || typeof row !== 'object' || typeof row.file !== 'string') continue
+    row.text = refText(row.file)
+    delete row.file
+  }
+  return table
+}
+
+/**
+ * The model→text table, read once from `model-personas.json` and cached, with
+ * every `file` row resolved to its text.
+ *
+ * Read at apply time, not at import time: the lesson `codex-collab-mode.mjs`
+ * records is that a missing data file must not make the plugin un-importable.
+ * Unlike that plugin there is NO fallback here — the picked text IS the whole
+ * system prompt for a chat session, so a missing or malformed table (or a
+ * dangling `file` reference) has no honest substitute. Throwing lets the row
+ * fail to mount and the preset composition report it, instead of silently
+ * sending an empty prompt.
+ * @returns the parsed `{ default, personas[] }` table.
+ */
+export function personaTable() {
+  if (cachedTable === undefined) cachedTable = resolveRefs(JSON.parse(readFileSync(TABLE_URL, 'utf8')))
+  return cachedTable
+}
 
 /**
  * The model id the Session's NEXT request will use, from the harness's own
@@ -68,7 +134,7 @@ export function sessionModel(ctx, agent) {
   return (state?.pending ?? state?.lastUsed)?.model ?? agent?.options?.model
 }
 
-/** Pick the persona text for one model id from the verbatim table. */
+/** Pick the persona text for one model id from the resolved table (every row carries `text`). */
 export function pickPersona(modelId, table) {
   const key = modelId ? String(modelId).split('.').pop().trim().toLowerCase() : ''
   const aliases = []
@@ -88,12 +154,13 @@ export function pickPersona(modelId, table) {
   return best ? best.text : (typeof table?.default === 'string' ? table.default : '')
 }
 
-export function apply(ctx, config) {
+export function apply(ctx) {
+  const table = personaTable()
   ctx.systemPrompt.suppressRuntimeContext()
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'deployment:persona-prefix',
     order: ctx.systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
     complete: true,
-    text: context => pickPersona(sessionModel(ctx, context?.agent), config),
+    text: context => pickPersona(sessionModel(ctx, context?.agent), table),
   }), 'chat-agent/model-persona.section()')
 }

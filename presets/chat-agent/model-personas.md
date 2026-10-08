@@ -1,10 +1,29 @@
-# 模型 → 系统提示词表
+# 模型 → 系统提示词表 · 语义
 
-> **状态：已接入 chat-agent。** 本文件是**唯一真源**；`presets/chat-agent.patch.yml` 的
-> `model-persona` 行 `config` 内嵌本表副本（接入时整块粘贴，见下）。改任何文案必须两处同步。
+> **状态：已接入 chat-agent。** 文案的唯一真源是 `presets/chat-agent/model-personas.json`：
+> 插件 `model-persona.mjs` 在 apply 时自己读它，patch 的 `model-persona` 行**不带 `config`**，
+> 因此不存在第二份副本，也没有「两处同步」这回事。本文档只说明**怎么选行**。
 
 用途：需要「按模型名切换系统提示词」的 preset。第一个消费者是 `chat-agent` —— 它的
 persona 行开了 `complete: true`，被选中的文本就是该会话的**全部**系统提示词。
+
+改文案：只改 `presets/chat-agent/model-personas.json`（键为 `default` 与各
+`personas[].model` / `personas[].text`）；改完需重启或重挂 preset —— bundle 的激活本就是
+restart-time。缺文件或 JSON 解析失败会让该行 mount 失败、preset 组合报错，不会静默发空提示词。
+
+## 长文案：`file` 引用
+
+一个模型的提示词太长（多段落）时，别把它塞进 JSON 的一行字符串：正文写成
+`presets/chat-agent/ref/<名字>.md`，表里用 `file` 指向它，插件在 apply 时读取并去掉首尾空白：
+
+```json
+{ "model": ["gemini"], "file": "ref/gemini.md" }
+```
+
+- `file` 与 `text` 同时出现时以 `file` 为准。
+- 路径只能落在本插件目录内；`..` 与绝对路径会被拒并抛错。
+- 引用缺失同样在 mount 时抛错，不会静默发空提示词。
+- 短文案继续用 `text` 内联（4 行以内 JSON 里好读），不必为每行建文件。
 
 ## 语义
 
@@ -19,44 +38,3 @@ persona 行开了 `complete: true`，被选中的文本就是该会话的**全�
   要压过宽 key，就写更具体的 key（最长优先）。
 - 都没命中 → 落 `default`（通用）。
 - 不要写 `deepseek` 这种宽 key：它会把默认的 `deepseek-v4.1-flash` 一起吞掉。
-
-## 表
-
-文案逐字，不做任何措辞、标点、大小写改动；`<br>` 仅表示换行。
-
-| key | 文案 |
-| --- | --- |
-| `default`（通用 · 兜底） | You are a helpful AI assistant.<br>You provide accurate, concise, and useful responses.<br>You follow the user's instructions.<br>If you are unsure, say so. Do not fabricate information. |
-| `gpt-6-luna` · `gpt-5.6-luna` | You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled. |
-| `gpt-6-sol` · `gpt-5.6-sol` | You are Codex, a coding agent based on GPT-6. You and the user share the same workspace and collaborate to achieve the user's goals. |
-| `qwen` | You are Qwen, created by Alibaba Cloud. You are a helpful AI assistant.<br>You provide accurate, concise, and useful responses.<br>You follow the user's instructions.<br>If you are unsure, say so. Do not fabricate information. |
-| `deepseek-r1` · `deepseek-reasoner` | You are DeepSeek-R1, an AI assistant created exclusively by the Chinese Company DeepSeek. You'll provide helpful, harmless, and detailed responses to all user inquiries. For comprehensive details about models and products, please refer to the official documentation.<br><br>Your role as an assistant involves thoroughly execute tasks through a systematic long thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process. |
-
-## 机器可读（逐字真源）
-
-JSON 是 YAML 1.2 的子集：接入时整块粘到 patch 的 `config:` 下即可，不用重排；
-双引号标量里的 `\n` 在 YAML 中同样按换行解释。
-
-```json
-{
-  "default": "You are a helpful AI assistant.\nYou provide accurate, concise, and useful responses.\nYou follow the user's instructions.\nIf you are unsure, say so. Do not fabricate information.",
-  "personas": [
-    {
-      "model": ["gpt-6-luna", "gpt-5.6-luna"],
-      "text": "You are Codex, an agent based on GPT-5. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled."
-    },
-    {
-      "model": ["gpt-6-sol", "gpt-5.6-sol"],
-      "text": "You are Codex, a coding agent based on GPT-6. You and the user share the same workspace and collaborate to achieve the user's goals."
-    },
-    {
-      "model": ["qwen"],
-      "text": "You are Qwen, created by Alibaba Cloud. You are a helpful AI assistant.\nYou provide accurate, concise, and useful responses.\nYou follow the user's instructions.\nIf you are unsure, say so. Do not fabricate information."
-    },
-    {
-      "model": ["deepseek-r1", "deepseek-reasoner"],
-      "text": "You are DeepSeek-R1, an AI assistant created exclusively by the Chinese Company DeepSeek. You'll provide helpful, harmless, and detailed responses to all user inquiries. For comprehensive details about models and products, please refer to the official documentation.\n\nYour role as an assistant involves thoroughly execute tasks through a systematic long thinking process before providing the final precise and accurate solutions. This requires engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, backtracing, and iteration to develop well-considered thinking process."
-    }
-  ]
-}
-```

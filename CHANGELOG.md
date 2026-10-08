@@ -2,6 +2,25 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.6.2] - 2026-10-07
+
+### Changed (the chat-agent persona table left Markdown for a JSON data file)
+
+- **`presets/chat-agent/model-personas.json` (new) is the single copy of the model→text table, and `model-persona.mjs` reads it itself.** The `model-persona` row in `presets/chat-agent.patch.yml` no longer carries a `config`; `apply()` takes no config and the section text is picked from `personaTable()`, which lazily `JSON.parse`s `model-personas.json` beside the plugin (`new URL('./model-personas.json', import.meta.url)`) and caches it. The defect this removes: `presets/chat-agent/model-personas.md` was declared the single source of truth, but nothing read it — the runtime read the JSON pasted into the patch's `config` — so editing "the truth" changed nothing the model received, and no mechanism compared the two copies (the `.md` header itself said 改任何文案必须两处同步). One file is now both the documented source and the loaded source.
+- **A table row may point at a Markdown body instead of inlining its text** — `{ "model": [...], "file": "ref/gemini.md" }`. `personaTable()` resolves every `file` through the new `refText()` at apply time: relative to the plugin directory, absolute paths and `..` escapes refused, text trimmed. A long multi-paragraph prompt then lives in a readable `.md` (the `codex-collab-mode.mjs` pattern), `pickPersona()` stays a pure function over `text` strings, and a broken reference still fails the MOUNT instead of throwing per request inside the section's `text` function.
+- **No text changed and no selection behaviour changed.** `sessionModel()` (`pending ?? lastUsed` of the `modelSelection` projection, else `agent.options.model`) and `pickPersona()` (exact alias, else longest prefix, else `default`) keep their 1.6.1 logic line for line; the four 1.6.1 behaviour assertions in `check-model-persona.mjs` are unchanged. The only new export is `personaTable()`.
+- **`check-model-persona.mjs` stops extracting the table from the patch** — the brace-matched `config:` reader and its `readFileSync` are gone — and imports `personaTable()` instead, so it asserts against the table the runtime actually loads: a missing or malformed `model-personas.json` now fails here too, and its new assertions cover the `file`-reference resolution and its path guard (a `..` escape and an absolute path both throw).
+- **`presets/chat-agent/model-personas.md` is documentation only**: the 「表」 and 「机器可读」 sections (the duplicated text) are gone; the matching semantics and a pointer to the JSON file remain.
+- Docs: `CONTEXT.md`'s **Model persona** entry and example dialogue, and the `chat-agent` paragraph in `README.md` / `README.zh.md`, now name `presets/chat-agent/model-personas.json`.
+- `package.json`: `version` 1.6.1 → 1.6.2. No new dependency and no new field — the JSON ships under the existing `files: ["presets"]` and the existing `exports` wildcard `"./presets/*"`.
+
+### Notes
+
+- **The `model-persona` row's `config` is no longer read.** Overriding that row's `config` from a profile patch to swap the text (never documented) stops working; edit `model-personas.json` instead. Making the row honour a `config` again would reintroduce a second source, so it is deliberately not done.
+- **A missing or unparsable `model-personas.json` throws in `apply()`, failing the row's mount and the preset composition** — deliberately: the picked text is the whole system prompt of a chat session, so an empty prompt is worse than a loud mount failure. Contrast `codex-collab-mode.mjs`, which falls back to an empty body for its optional prompt file.
+- **Editing the JSON still needs a restart or a remount** (`personaTable()` caches the file; `.mjs` HMR does not re-read it) — the same requirement the inlined patch text had. No `fs.watch` was added.
+- `PUBLISH-CHECKLIST.md` needs no update: the new file falls inside the existing `files: ["presets"]`, and no published invariant changed.
+
 ## [1.6.1] - 2026-10-07
 
 ### Fixed (chat-agent picked the generic persona for every Web UI session)
