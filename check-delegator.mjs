@@ -300,5 +300,13 @@ assert.deepEqual([...toolsBlock.matchAll(/^\s+- (\S+)$/gm)].map(match => match[1
 assert.ok(patch.includes('provider: spawn'))
 assert.ok(patch.includes('enableRunInBackground: false'))
 assert.ok(patch.includes('maxDepth: 1'))
+// A row that omits a `.required()` Config key fails to mount, and ONE failed row
+// marks the whole preset broken — observed live as
+// `tool-todo (@deepseek-ai/dsh-tool-todo): invalid config: $.allowParallelInProgress
+// missing required value`. `@deepseek-ai/dsh-tool-todo` has exactly one such key.
+assert.match(
+  patch,
+  /- id: tool-todo\n(?:\s*#.*\n)*\s+name: '@deepseek-ai\/dsh-tool-todo'\n(?:\s*#.*\n)*\s+config:\n\s+allowParallelInProgress: (?:true|false)\n/,
+)
 
 console.log('check-delegator: ok')

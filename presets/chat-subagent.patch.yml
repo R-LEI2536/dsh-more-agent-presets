@@ -107,6 +107,12 @@
               sampleOverCapGlobResults: false
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
+            # The one key this plugin has no default for (`allowParallelInProgress`
+            # is `.required()` in its Config), so a row without it fails to mount
+            # and the WHOLE preset reports a load failure. The shipped standard
+            # preset passes `true`; this row mirrors that.
+            config:
+              allowParallelInProgress: true
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
 
