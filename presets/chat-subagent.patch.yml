@@ -1,0 +1,132 @@
+# Agent preset chat-subagent: one `@deepseek-ai/dsh-agent-preset` declaration,
+# derived from `presets/chat-agent.patch.yml`.
+#
+# The rule this preset exists to break: `chat-agent` can call nothing, this one
+# can call ONE thing — `subagent`, the tool that creates a subagent to carry the
+# task out. The delegated subagent is a real agent with a real (read-only) tool
+# set; the top-level session is the delegator.
+#
+# WHY THE MASK IS NOT DECLARED HERE. The obvious shape — a preset-plane
+# `ctx.tools.restrict({ allow: ['subagent'] })` next to these rows — is wrong,
+# and silently so: a delegated child JOINS ITS PARENT'S PRESET
+# (`applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`,
+# `packages/subagent/subagent/src/child-agent.ts:200-219`), and the standing
+# scope's restriction is on the child's chain too, so the child would inherit
+# the same one-tool mask and the delegation would accomplish nothing. A
+# restriction can only narrow, so the child's own `toolFilter` cannot undo it.
+# The mask therefore lives in `delegator.mjs`, registered per agent on that
+# agent's OWN scope, which a delegated child does not inherit (its scope parent
+# is this preset's standing scope, not the parent Agent's scope). Children get
+# their own mask from the same plugin. `delegator.mjs` carries the mechanism
+# with source pointers.
+#
+# WHY THESE TOOL ROWS. On the `web` profile the host plane's model-facing rows
+# are all disabled (`@deepseek-ai/dsh-web-app` `cordis.patch.yml:430-556`), so
+# what an agent sees is exactly what its preset mounts — and the child inherits
+# this preset's rows, not the top-level session's mask. These four rows are the
+# only source of the names `subagentTools` lists: `read` (plus `write`/`edit`,
+# hidden from the child and shadowed for the top-level session), `glob`/`grep`,
+# `todo_write`, and the `job_*` family. `write`/`edit`/`bash` are deliberately
+# out of the default list: the subagent works read-only in this release (see
+# TODO.md for the writable/command-capable follow-up).
+#
+# Two names in `subagentTools` are NOT ours and may be absent from a deployment:
+# `read_image` registers only while an attachment store is mounted
+# (`packages/fs/tool-fs/src/index.ts:67-72`), and `list_directory` comes from a
+# third-party profile row. `delegator.mjs` probes each name and drops the ones
+# this deployment does not have, so a missing tool costs that tool and never the
+# delegation.
+#
+# THE ONE TOOL. `@deepseek-ai/dsh-tool-subagent` mounts one model-facing tool per
+# instance, on the `spawn` provider (a fresh child that never sees this
+# conversation, so a task prompt must stand alone). `enableRunInBackground:
+# false` removes `run_in_background` from the schema entirely, so the single
+# call waits for the child and returns its report — a background start would
+# need `job_output`/`send_message` to collect, and those are second tools this
+# preset does not have. `backgroundMode: one-shot` is the matching policy.
+# `maxDepth: 1` states the recursion budget outright: the child may not delegate
+# again (the mask also hides `subagent` from it, and the guard refuses it).
+# `modelSelectionSettings` is deliberately off — it would register the shared
+# `list_subagent_models` tool and break "exactly one tool".
+#
+# The persona text is NOT here: `delegator.mjs` composes it from the table
+# `chat-agent` owns (`presets/chat-agent/model-personas.json`, read by
+# `presets/chat-agent/model-persona.mjs`) plus the delegation note in the plugin.
+# One table, one copy. `persona` below is the WORKER's persona — the child's own
+# section, shadowing the deployment persona for that child alone.
+#
+# A pure `insert` with no `!!js` expression: nothing here is platform- or
+# environment-conditional.
+- insert:
+    - id: preset-chat-subagent
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: chat-subagent
+        order: 16
+        name: "通用聊天模式 · 可派活"
+        description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        plugins:
+          # The two masks plus the delegator persona. `presetId` must equal this
+          # declaration's `id` (it is what tells the plugin which live agents
+          # belong to this preset during `tools/change` reconciliation);
+          # `subagentTools` is the single source of the child's read-only list.
+          - id: delegator
+            name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'
+            config:
+              presetId: chat-subagent
+              subagentTools:
+                - read
+                - glob
+                - grep
+                - read_image
+                - list_directory
+                - todo_write
+                - job_list
+
+          # The one model-facing tool (header).
+          - id: tool-subagent
+            name: '@deepseek-ai/dsh-tool-subagent'
+            config:
+              provider: spawn
+              toolName: subagent
+              backgroundMode: one-shot
+              enableRunInBackground: false
+              maxDepth: 1
+              persona: >-
+                You are a delegated read-only subagent of a chat session. Work only through the tools
+                in your catalog, keep the investigation tight, and answer with a concise report the
+                delegating agent can act on: what you checked, what you found, and anything you could
+                not determine. You cannot modify files, run commands, or delegate further.
+
+          # The child's tool sources; the top-level session sees none of them.
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+
+          # A chat session is long by nature, and a child that greps a repository
+          # produces the large tool results the pruner exists for; the top-level
+          # session has none, so the row costs it nothing.
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024

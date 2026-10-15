@@ -9,7 +9,7 @@
 _Avoid_: preset.yml、preset 目录、agent.cordis.yml（已废弃的旧机制）
 
 **Patch layer**:
-一个「Loader patch 条目列表」的 YAML 文件，按顺序叠加在 profile 组合之上；本 bundle 通过 `dsh.bundle.patch` 发布七个这样的文件。
+一个「Loader patch 条目列表」的 YAML 文件，按顺序叠加在 profile 组合之上；本 bundle 通过 `dsh.bundle.patch` 发布八个这样的文件。
 _Avoid_: 配置文件、覆盖文件
 
 **Preset plane**:
@@ -35,11 +35,28 @@ _Avoid_: 静态 persona（固定一句文案的 persona 行）
 preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。
 _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，只过滤子 agent 的工具）
 
+**Delegator preset**:
+顶层会话只被允许调用一个工具（`subagent`）的 preset。它的“只有一个工具”由 per-agent mask 实现，而不是由 `config.plugins` 里缺少工具行实现——被派出去的子 agent 仍需真实工具，而它继承的是同一个 preset。
+_Avoid_: one-tool preset（易与 zero-tool preset 混淆）、subagent preset
+
+**Agent-scope mask**:
+注册在**每个 agent 自身 scope** 上的 `ctx.tools.restrict(...)` 与 `ctx.tools.guard(...)` 组合。preset 层（standing scope）的 restriction 会连带封住 delegated child，因为子 agent 的 scope 父级就是该 standing scope；所以“只对顶层生效”的屏蔽必须在 agent 创建后逐个安装，并按 delegation depth 分流。
+_Avoid_: preset 层 restriction（那是 zero-tool preset 的做法）、`toolFilter`
+
+**Subagent tool list**:
+声明里 `subagentTools` 给出的、被派出去的子 agent 可用的工具名白名单；只有本 preset 自己挂载的行才能出现在里面。名字在 `restrict()` 时按「当下已注册」校验，因此名单里的部署依赖项（`read_image` 需要附件存储、`list_directory` 来自第三方 profile 插件）在缺失时被丢掉并各警告一次，而不是让每次派活失败。
+_Avoid_: 工具池、`toolFilter`
+
+**Delegated child**:
+被 `subagent` 工具创建、执行任务的子 agent：它带着自己的 delegation depth 加入父会话的同一个 preset，因此既继承 preset 的工具行，又不受父会话那份 agent-scope mask 的影响。
+_Avoid_: worker（内部叫法，不是产品术语）
+
 ## Flagged ambiguities
 
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。
 - “minimal” 容易被读成「零工具」：`minimal` 是随 DSH 发布的 preset、挂了持久 shell；本仓库里零工具的是 `chat-agent`。
 - “model-persona” 不是 persona 行的别名：前者是按模型切换文案的插件行（`model-persona.mjs`），后者是 `@deepseek-ai/dsh-persona` 的静态 `prefix` 行（chat-agent 已不用后者）。
+- “只有一个工具”说的永远是**顶层会话**的工具目录（`chat-subagent`）；delegated child 看到的是 **Subagent tool list** 与它实际注册量的交集，两者不是同一个面。
 
 ## Example dialogue
 
@@ -50,3 +67,9 @@ _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，�
 > **Dev:** chat-agent 的 persona 文案要改，改哪里？
 > **Maintainer:** 改 `presets/chat-agent/model-personas.json` 一处即可——插件运行时直接读它，
 > patch 里没有副本；`model-personas.md` 只讲怎么选行。
+> **Dev:** 那“可派活”的 `chat-subagent` 也算 zero-tool preset 吗？
+> **Maintainer:** 不算，它是 **Delegator preset**：顶层会话只有一个工具，靠 **Agent-scope mask**
+> 装在每个 agent 自己的 scope 上；preset 层那套 restriction 会把 delegated child 一起封住，
+> 派活就没有意义了。子 agent 能用什么，看 **Subagent tool list**。
+> **Dev:** 那给子 agent 加 `bash` 是改名单就行吗？
+> **Maintainer:** 还要在声明里挂上 `tool-bash` 那一行——名单只能写本 preset 真正注册过的名字。

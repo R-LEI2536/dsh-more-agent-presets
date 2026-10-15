@@ -57,6 +57,38 @@
 
 纯聊天助手：不挂任何工具行，通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽**继承得来**的工具，并用 `ctx.tools.guard(...)` 拒绝执行注册在 **agent 自身 scope** 里的工具——因此它不能产生动作：不能读写文件、不能执行命令、不能联网搜索、也不能创建队友。两条边界是刻意的，机制与源码指引写在 `presets/chat-agent/no-tools.mjs`：其一，preset 层的 restriction 只覆盖继承面（全局层 + 每个祖先 scope），agent 自身 scope 的注册天然豁免，所以挂了这类插件的 profile（例如 `@deepseek-ai/dsh-experimental-agent-team-profile`，它的 9 个 Team 工具会注册进**每个** root agent 的 `agent.ctx`）下，那些工具**仍会列在**该会话的工具目录里，guard 负责让它们的调用返回拒绝而不是真的执行；其二，这个拒绝与「已被过滤的工具」返回的 `unknown tool` 不是同一种。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 / Gemini 3.7 · 3.8 文案，表源见 `presets/chat-agent/model-personas.json`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
 
+### 通用聊天模式 · 可派活 (`chat-subagent`)
+
+能力就是**一个工具**的聊天助手：`subagent`。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: ['subagent'] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。于是该会话的工具目录里只有一个工具，自己不能产生动作；它调用一次 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）那次调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+
+**真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
+
+**系统提示词按当前模型自动切换**：文案来自 `chat-agent` 拥有的那张表（`presets/chat-agent/model-personas.json`，由该 preset 的 `model-persona.mjs` 读取），再拼上一段派活说明，两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
+
+**要改子 agent 的工具名单**，就在 profile patch 里按 Loader 行 id 覆盖这条声明。`config` 是整体替换，每一行都要重述；而且只有本 preset 自己那几行真正注册的名字才能写进名单——`tools.restrict()` 会拒绝未知名字：
+
+```yaml
+# ~/.dsh/profiles/<profile>/cordis.patch.yml（节选：其余行必须原样重述）
+- id: preset-chat-subagent
+  name: '@deepseek-ai/dsh-agent-preset'
+  config:
+    id: chat-subagent
+    order: 16
+    name: "通用聊天模式 · 可派活"
+    description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
+    plugins:
+      - id: delegator
+        name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'
+        config:
+          presetId: chat-subagent
+          subagentTools: [read, glob, grep, todo_write]
+      # ……以及原声明里其余每一行，原样照抄……
+```
+
+放开名单不会自动改写那段派活说明：它在 `presets/chat-subagent/delegator.mjs` 里，描述的是随包发布的只读默认值；子 agent 能力变了，就顺手把它一起改掉。（它没有重复名单——里面一个工具名都没写——但它确实说了子 agent 不能做什么。）
+
+有一条边界是从 `chat-agent` 继承下来、无法消除的：挂了 agent-team bundle 的 profile 下，顶层会话的工具目录里仍然**会列出**那 9 个 Team 工具（agent 自身 scope 的注册天然豁免于任何 restriction），靠 guard 让它们的调用返回拒绝而不是真的执行。另外 `job_list` 对子 agent 目前是空转（它起不了后台任务），保留在默认名单里是为了以后放开"可写"时不必再改第二处。
+
 ## 设计理念
 
 这些 preset 在用户交互和规划方式上与 DSH 默认 prompt 有所不同：
@@ -89,18 +121,18 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 
 重启 Web profile，然后在创建会话时选择 preset。
 
-本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 6 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
+本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 7 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
 
 ## 行为说明
 
 **声明式 preset（DSH 0.1.7+）：**
 - 每个 preset 是一行声明在 bundle patch 中的 `@deepseek-ai/dsh-agent-preset`；`config.plugins` 持有子插件行（工具、提示段、带 `isolate` realm 的组，以及以包子路径 `dsh-more-agent-presets/presets/<id>/` 引用的本插件内嵌 `.mjs` 插件）。
-- preset `id`（`chat-agent`、`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效。
+- preset `id`（`chat-agent`、`chat-subagent`、`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效；`chat-subagent` 是本 bundle 这次新增的一行，它是新 preset，而不是对 `chat-agent` 的修改。
 - registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 
 **多文件 patch、bundle 自身那一行，与根入口产物：**
-- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 7 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
-- `cordis.patch.yml` 声明的是这个 bundle **自身**的 loader 行（`id`/`name` 都是 `dsh-more-agent-presets`），`index.mjs` 是它背后的空插件。这一行才是让 bundle 出现在运行中组合里的东西，也是每个 bundle 给自身声明行的固定做法（`dshmarket` 插的是 `dsh-market` / `dshmarket`；`@deepseek-ai/dsh-web-app` 插的是 `web-runtime` / `@deepseek-ai/dsh-web-app`）。缺了它，`dshmarket` 的存活判定（`liveIncludes`）无从匹配——6 个 preset 行的 `name` 是 `@deepseek-ai/dsh-agent-preset`——插件管理器于是每次打开页面都显示*「已安装，重启后生效」*，重启也不例外，而 6 个 preset 其实一直是好的。
+- `dsh.bundle.patch` 是一个**有序列表**（`cordis.patch.yml` 外加每个 preset 一个 `presets/<id>.patch.yml`）——这正是 DSH 核心支持的数组形式。宿主会按序组合这 8 个 patch 层；因为这是 bundle，生效时机是下一次启动，而不是热挂载。
+- `cordis.patch.yml` 声明的是这个 bundle **自身**的 loader 行（`id`/`name` 都是 `dsh-more-agent-presets`），`index.mjs` 是它背后的空插件。这一行才是让 bundle 出现在运行中组合里的东西，也是每个 bundle 给自身声明行的固定做法（`dshmarket` 插的是 `dsh-market` / `dshmarket`；`@deepseek-ai/dsh-web-app` 插的是 `web-runtime` / `@deepseek-ai/dsh-web-app`）。缺了它，`dshmarket` 的存活判定（`liveIncludes`）无从匹配——7 个 preset 行的 `name` 是 `@deepseek-ai/dsh-agent-preset`——插件管理器于是每次打开页面都显示*「已安装，重启后生效」*，重启也不例外，而 7 个 preset 其实一直是好的。
 - 部分第三方工具只识别字符串形式，并按「声明的根入口产物」判断已安装的构建是否可加载。`index.mjs`（通过 `main`、`exports["."]` 声明，并由 `files` 打进产物）既是为了让这项检查看到一个真实产物，也是为了让上面那一行有个真正的插件可挂。
 - **不要删除那一行自身行，也不要删除 `index.mjs`、`main` 或 `exports["."]`。** 缺了它们，插件管理器会把本插件标成损坏（*「已安装，校验未通过／声明的入口产物缺失」*）、拒绝安装或更新（*「updated build has no loadable entry」*），或者永远显示「重启后生效」——尽管 DSH 本身能正常加载这个 bundle。
 
@@ -118,7 +150,7 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 dsh plugin --profile web remove dsh-more-agent-presets
 ```
 
-卸载 bundle 会移除它的 patch 层，6 行 preset 声明随之从 profile 消失；安装在 profile node_modules 下的 preset `plugins` 资源随包移除。0.1.7+ 无需清理 `~/.dsh/.agent-presets`（若从 ≤1.4.x 迁移，参见上方「行为说明」）。
+卸载 bundle 会移除它的 patch 层，7 行 preset 声明随之从 profile 消失；安装在 profile node_modules 下的 preset `plugins` 资源随包移除。0.1.7+ 无需清理 `~/.dsh/.agent-presets`（若从 ≤1.4.x 迁移，参见上方「行为说明」）。
 
 ## 许可证
 
