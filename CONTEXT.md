@@ -29,7 +29,8 @@ _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久
 的那一个（`modelSelection` 投影的 `pending ?? lastUsed`，无投影时回落 `agent.options.model`），不取
 agent 创建时的 profile 默认值。表与插件位于 `presets/shared/`（`model-personas.json` +
 `model-persona.mjs`），因为**两个聊天 preset 共用**：`chat-agent` 把它当作全部提示词，`chat-subagent`
-导入它再追加派活说明。patch 的 `model-persona` 行不带 `config`，没有副本可同步；
+导入它、再追加自己的派活说明（`presets/chat-subagent/delegation-note.md`，可由 `delegator` 行的
+`delegationNote` 覆盖）。patch 的 `model-persona` 行不带 `config`，没有副本可同步；
 `presets/chat-agent/model-persona.mjs` 只是兼容 re-export（≤1.6.2 发布过那个路径），指向同一模块实例。
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 

@@ -6,7 +6,8 @@
 > 本文档只说明**怎么选行**。
 
 用途：需要「按模型名切换系统提示词」的 preset。两个消费者共用这一份表：`chat-agent` 把它当作
-该会话的**全部**系统提示词（`complete: true`），`chat-subagent` 在它后面追加一段派活说明。
+该会话的**全部**系统提示词（`complete: true`），`chat-subagent` 在它后面追加一段派活说明
+（`presets/chat-subagent/delegation-note.md`）。
 `presets/chat-agent/model-persona.mjs` 只是兼容 re-export（≤1.6.2 发布过那个路径），没有第二份实现。
 
 改文案：只改 `presets/shared/model-personas.json`（键为 `default` 与各

@@ -137,6 +137,26 @@ const codex = pickPersona('gpt-6-luna', personaTable())
 assert.ok(codex.startsWith('You are Codex'))
 assert.ok(personaText('gpt-6-luna', personaTable()).startsWith(codex))
 
+// The delegation half is a FILE, and that file is the source of truth: the
+// constant is only its trimmed content, so prompt text stays a document a human
+// reviews instead of a string array inside the plugin.
+assert.equal(
+  DELEGATION_NOTE,
+  readFileSync(new URL('./presets/chat-subagent/delegation-note.md', import.meta.url), 'utf8').trim(),
+)
+// A row may override it, and the override REPLACES the file rather than joining
+// it. A blank one must not silently drop the delegation half.
+assert.deepEqual(
+  normalizeConfig({ ...CONFIG, delegationNote: 'N' }, message => configWarnings.push(message)),
+  { ...CONFIG, delegationNote: 'N' },
+)
+assert.equal(personaText('m', table, 'N'), 'M\n\nN')
+assert.deepEqual(
+  normalizeConfig({ ...CONFIG, delegationNote: '  ' }, message => configWarnings.push(message)),
+  CONFIG,
+)
+assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the shipped delegation-note.md is used instead'])
+
 // ── the top-level mask ───────────────────────────────────────────────────────
 
 {
@@ -170,6 +190,21 @@ assert.ok(personaText('gpt-6-luna', personaTable()).startsWith(codex))
   const text = section.text({ agent })
   assert.ok(text.startsWith(codex))
   assert.ok(text.endsWith(DELEGATION_NOTE))
+  assert.deepEqual(host.warnings, [])
+}
+
+// ── the row's note override ──────────────────────────────────────────────────
+
+{
+  const host = fakeHost()
+  apply(host.ctx, { ...CONFIG, delegationNote: 'OVERRIDE' })
+  const agent = fakeAgent({ id: 'top' })
+  host.fire('agent/created', { agent })
+  // The override must reach the REGISTERED section, not just `personaText()`.
+  const text = agent.scope.systemPrompt.sections[0].text({ agent })
+  assert.ok(text.startsWith(codex))
+  assert.ok(text.endsWith('OVERRIDE'))
+  assert.ok(!text.includes(DELEGATION_NOTE))
   assert.deepEqual(host.warnings, [])
 }
 

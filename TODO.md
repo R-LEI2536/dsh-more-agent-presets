@@ -12,9 +12,9 @@ or remove them once a decision lands.
     `write`/`edit` 已经随 `tool-fs` 的 `read` 一起注册，行本身不用改；
   - 把名字加进 `delegator` 行的 `config.subagentTools` —— `tools.restrict()` 只接受**当时已注册**
     的名字，名单里写没有挂载的工具会让该 agent 的 mask 降级（该名字被丢弃并警告）；
-  - 改 `presets/chat-subagent/delegator.mjs` 里的 `DELEGATION_NOTE`：它进顶层会话的系统提示词，
-    现在写着"子 agent 只读、不能改任何东西、不能跑命令"。不改这一句，顶层会以为活干不了而把请求推掉，
-    尽管子 agent 已经能写能跑（README 的覆盖说明里也提了这一条）。
+  - 改 `presets/chat-subagent/delegation-note.md`（顶层会话系统提示词里那一段；`delegator` 行也可以用
+    `config.delegationNote` 覆盖它）：它现在写着"子 agent 只读、不能改任何东西、不能跑命令"。不改这一句，
+    顶层会以为活干不了而把请求推掉，尽管子 agent 已经能写能跑（README 的覆盖说明里也提了这一条）。
   - 一并要决定的事：子 agent 的审批策略固定为 `never`、沙箱随父会话，因此"可写"意味着它能在父会话
     的沙箱范围内改文件，而任何需要审批的操作会被自动拒绝。想要更细的 per-child 权限，得先有 DSH 侧
     的表达。`job_list` 已经在默认名单里，放开后立刻可用。

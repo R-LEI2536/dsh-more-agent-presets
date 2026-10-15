@@ -63,7 +63,7 @@
 
 **真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
 
-**系统提示词按当前模型自动切换**：文案来自**两个聊天 preset 共用**的那张表（`presets/shared/model-personas.json`，由 `presets/shared/model-persona.mjs` 读取，`chat-agent` 也把它当作自己的全部提示词），再拼上一段派活说明，两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
+**系统提示词按当前模型自动切换**：文案来自**两个聊天 preset 共用**的那张表（`presets/shared/model-personas.json`，由 `presets/shared/model-persona.mjs` 读取，`chat-agent` 也把它当作自己的全部提示词），再拼上一段派活说明（`presets/chat-subagent/delegation-note.md`，挂载时逐字读入），两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
 
 **要改子 agent 的工具名单**，就在 profile patch 里按 Loader 行 id 覆盖这条声明。`config` 是整体替换，每一行都要重述；而且只有本 preset 自己那几行真正注册的名字才能写进名单——`tools.restrict()` 会拒绝未知名字：
 
@@ -85,7 +85,7 @@
       # ……以及原声明里其余每一行，原样照抄……
 ```
 
-放开名单不会自动改写那段派活说明：它在 `presets/chat-subagent/delegator.mjs` 里，描述的是随包发布的只读默认值；子 agent 能力变了，就顺手把它一起改掉。（它没有重复名单——里面一个工具名都没写——但它确实说了子 agent 不能做什么。）
+放开名单不会自动改写那段派活说明：说明就是文件 `presets/chat-subagent/delegation-note.md`，挂载时逐字读入，描述的是随包发布的只读默认值——子 agent 能力变了就改这个文件，或在某个 profile 里用 `delegator` 行的 `delegationNote` 覆盖它。没有任何东西从说明里反推工具名单：它只用人话说了子 agent 能做什么、不能做什么。
 
 有一条边界是从 `chat-agent` 继承下来、无法消除的：挂了 agent-team bundle 的 profile 下，顶层会话的工具目录里仍然**会列出**那 9 个 Team 工具（agent 自身 scope 的注册天然豁免于任何 restriction），靠 guard 让它们的调用返回拒绝而不是真的执行。另外 `job_list` 对子 agent 目前是空转（它起不了后台任务），保留在默认名单里是为了以后放开"可写"时不必再改第二处。
 

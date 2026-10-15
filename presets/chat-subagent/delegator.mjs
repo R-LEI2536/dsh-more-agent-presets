@@ -6,6 +6,10 @@
  * declaration lists. Nothing here can be expressed as one standing-scope
  * restriction, and this module exists because of that.
  *
+ * No prompt text is written in this file: the per-model half is
+ * `../shared/model-personas.json` and the delegation half is
+ * `./delegation-note.md`, both read at mount.
+ *
  * (1) A preset's rows mount in the STANDING SCOPE the registry creates for the
  * revision (`@deepseek-ai/dsh-agent-preset-registry`, `activate` → `createScope`
  * + `mountPreset`), and every selecting Agent is parented to that same scope
@@ -66,6 +70,8 @@
  * (`:1111-1112`).
  */
 
+import { readFileSync } from 'node:fs'
+
 import { personaTable, pickPersona, sessionModel } from '../shared/model-persona.mjs'
 
 export const name = 'chat-subagent/delegator'
@@ -80,19 +86,19 @@ export const RUN_CODE = 'run_code'
 
 /**
  * The delegation half of a top-level session's persona, appended verbatim to the
- * per-model text this preset shares with `chat-agent`. It has to say all of this
- * because the picked text is the session's ENTIRE system prompt and the subagent
- * tool is its only capability: nothing else tells the model that the child is
- * blind to the conversation, and nothing else tells it that the child is
- * read-only. The capabilities it names are the SHIPPED default; a declaration
- * that widens `subagentTools` should revise this text with it.
+ * per-model text this preset shares with `chat-agent`. It is prompt text, so it
+ * lives in `delegation-note.md` — a document, not a string literal — and is read
+ * once here, when the row mounts: a missing or unreadable file must break the
+ * preset loudly, never leave the session with a silent empty half. That file IS
+ * the prompt, verbatim: no heading, no comment, nothing that is not meant for
+ * the model. The picked text is the session's ENTIRE system prompt and the
+ * subagent tool is its only capability, so the note has to say all of this:
+ * nothing else tells the model that the child is blind to the conversation, and
+ * nothing else tells it that the child is read-only. The capabilities it names
+ * are the SHIPPED default; a declaration that widens `subagentTools` must revise
+ * this file with it, or override the note from the row's `delegationNote`.
  */
-export const DELEGATION_NOTE = [
-  'Your only tool is `subagent`. This session cannot read files, run commands, or edit anything by itself, and it must not delegate twice.',
-  'When the user wants something read, listed, or investigated in the workspace, call `subagent` once with a complete, self-contained task description, then answer the user from the report it returns. The subagent does not see this conversation, so restate everything it needs: paths, names, and the exact question.',
-  'The subagent works read-only: it can read files and images, list directories, and search with glob and grep, but it cannot modify anything, run a command, or reach the web. When a request needs one of those, say so plainly instead of pretending.',
-  'When the user only wants to talk, just talk — do not delegate.',
-].join('\n\n')
+export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', import.meta.url), 'utf8').trim()
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
@@ -125,20 +131,24 @@ export function depthOf(agent) {
  * `chat-agent` owns, plus the delegation note. One table, one note.
  * @param modelId - the model the session's next request will use.
  * @param table - the parsed table, already resolved by `personaTable()`.
+ * @param note - the delegation half: the shipped file, or the row's override.
  * @returns the complete prompt text.
  */
-export function personaText(modelId, table) {
+export function personaText(modelId, table, note = DELEGATION_NOTE) {
   const text = pickPersona(modelId, table)
-  return text === '' ? DELEGATION_NOTE : `${text}\n\n${DELEGATION_NOTE}`
+  return text === '' ? note : `${text}\n\n${note}`
 }
 
 /**
  * Normalize the row's `config`. The declaration is the single source of the
  * subagent list, so this validates and de-duplicates it rather than supplying a
- * default that could silently disagree with the patch.
+ * default that could silently disagree with the patch; `delegationNote` is the
+ * other way round — an optional override of the shipped note FILE, omitted
+ * unless a declaration really states one (so the file stays the default, and a
+ * row keeps reading as "which tools" plus at most one prompt sentence).
  * @param config - the row config, possibly absent on a hand-written patch.
  * @param warn - sink for one message per distinct problem.
- * @returns the preset identity and the subagent tool list.
+ * @returns the preset identity, the subagent tool list, and the note override.
  */
 export function normalizeConfig(config, warn) {
   const rawId = config?.presetId
@@ -157,7 +167,13 @@ export function normalizeConfig(config, warn) {
     if (tool === '' || subagentTools.includes(tool)) continue
     subagentTools.push(tool)
   }
-  return { presetId, subagentTools }
+  const rawNote = config?.delegationNote
+  let delegationNote
+  if (rawNote !== undefined) {
+    if (typeof rawNote === 'string' && rawNote.trim() !== '') delegationNote = rawNote
+    else warn('`delegationNote` is blank: the shipped delegation-note.md is used instead')
+  }
+  return { presetId, subagentTools, ...delegationNote === undefined ? {} : { delegationNote } }
 }
 
 /**
@@ -227,7 +243,7 @@ export function apply(ctx, config) {
     ctx.get('logger')?.warn(`chat-subagent/delegator: ${message}`)
   }
 
-  const { presetId, subagentTools } = normalizeConfig(config, warn)
+  const { presetId, subagentTools, delegationNote } = normalizeConfig(config, warn)
   const subagentAllowed = new Set(subagentTools)
   const delegatorAllowed = new Set(DELEGATOR_TOOLS)
   const handled = new WeakSet()
@@ -251,6 +267,7 @@ export function apply(ctx, config) {
         const systemPrompt = agent.ctx.systemPrompt
         systemPrompt.suppressRuntimeContext()
         const table = personaTable()
+        const note = delegationNote ?? DELEGATION_NOTE
         // A function text is what makes the prompt follow the model the Session
         // selected for its NEXT request, not the one it was created with
         // (`shared/model-persona.mjs` has the measurement).
@@ -258,7 +275,7 @@ export function apply(ctx, config) {
           name: 'deployment:persona-prefix',
           order: systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),
           complete: true,
-          text: context => personaText(sessionModel(ctx, context?.agent), table),
+          text: context => personaText(sessionModel(ctx, context?.agent), table, note),
         }
         // `systemPrompt.section()` registers through the AGENT's context, so the
         // agent's own scope disposes this section with it.
