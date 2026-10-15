@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs'
 import { pickPersona, personaTable } from './presets/shared/model-persona.mjs'
 import {
   apply,
+  childRoute,
   DELEGATION_NOTE,
   DELEGATOR_TOOLS,
   depthOf,
@@ -76,28 +77,36 @@ function fakeScope({ known = MOUNTED, noGuard = false } = {}) {
   return { tools, systemPrompt, seen }
 }
 
-/** A preset-scoped context whose services are reachable through `get()`. */
+/**
+ * A preset-scoped context whose services are reachable through `get()`.
+ *
+ * The logger is a PROPERTY here, matching cordis: `ctx.logger` is assigned in
+ * the Context constructor and is not a provided service, so `get('logger')`
+ * returns undefined. A fake that answered `get('logger')` made a plugin logging
+ * through it pass this check while printing nothing in a real session.
+ */
 function fakeHost({ liveAgents = [], presetOf = () => undefined } = {}) {
   const handlers = new Map()
   const warnings = []
+  const infos = []
   const ctx = {
+    logger: { warn: message => warnings.push(message), info: message => infos.push(message) },
     on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]) },
     get(name) {
-      if (name === 'logger') return { warn: message => warnings.push(message) }
       if (name === 'agents') return { list: () => liveAgents }
       if (name === 'agentPresets') return { composedPreset: agentCtx => presetOf(agentCtx) }
       return undefined
     },
   }
-  return { ctx, warnings, fire: (event, payload) => (handlers.get(event) ?? []).map(handler => handler(payload)) }
+  return { ctx, warnings, infos, fire: (event, payload) => (handlers.get(event) ?? []).map(handler => handler(payload)) }
 }
 
 /** One agent of a known depth, carrying the scope its mask must land on. */
-function fakeAgent({ id = 'agent', runtimeDepth, headerDepth, model = 'gpt-6-luna', scope = fakeScope() } = {}) {
+function fakeAgent({ id = 'agent', runtimeDepth, headerDepth, model = 'gpt-6-luna', provider, scope = fakeScope() } = {}) {
   return {
     id,
     scope,
-    options: { model, ...runtimeDepth === undefined ? {} : { subagentDepth: runtimeDepth } },
+    options: { model, ...provider === undefined ? {} : { provider }, ...runtimeDepth === undefined ? {} : { subagentDepth: runtimeDepth } },
     session: { header: headerDepth === undefined ? {} : { delegationDepth: headerDepth } },
     ctx: { tools: scope.tools, systemPrompt: scope.systemPrompt },
   }
@@ -191,6 +200,8 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.ok(text.startsWith(codex))
   assert.ok(text.endsWith(DELEGATION_NOTE))
   assert.deepEqual(host.warnings, [])
+  // The route line is about the CHILD; a top-level session adds no log noise.
+  assert.deepEqual(host.infos, [])
 }
 
 // ── the row's note override ──────────────────────────────────────────────────
@@ -229,6 +240,28 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // it needs its own tool guidance and the delegation-scope context.
   assert.equal(worker.scope.systemPrompt.suppressed, false)
   assert.deepEqual(worker.scope.systemPrompt.sections, [])
+  // The debug line: one child, one route, read from the options it was created
+  // with. This child states no provider, so the line is the model alone.
+  assert.deepEqual(host.infos, ['chat-subagent/delegator: subagent worker route gpt-6-luna'])
+}
+
+// ── the child's route line ───────────────────────────────────────────────────
+
+{
+  const host = fakeHost()
+  apply(host.ctx, CONFIG)
+  const worker = fakeAgent({ id: 'worker-routed', headerDepth: 1, provider: 'opencode-chat', model: 'deepseek-v4.1-flash' })
+  host.fire('agent/created', { agent: worker })
+  assert.deepEqual(host.infos, [
+    'chat-subagent/delegator: subagent worker-routed route opencode-chat/deepseek-v4.1-flash',
+  ])
+
+  // Half a route is worth printing, and the line must not invent the other half.
+  assert.equal(childRoute(host.ctx, fakeAgent({ model: 'gpt-6-luna' })), 'gpt-6-luna')
+  assert.equal(childRoute(host.ctx, fakeAgent({ provider: 'alpha', model: '' })), 'alpha')
+  assert.equal(childRoute(host.ctx, fakeAgent({ model: '', provider: '  ' })), 'unknown')
+  // An absent agent is a diagnostic call, not a crash.
+  assert.equal(childRoute(host.ctx, undefined), 'unknown')
 }
 
 // ── a deployment that lacks the two profile-dependent names ──────────────────
@@ -306,6 +339,9 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
   assert.equal(ours.scope.seen.guards.length, 1)
   assert.equal(ours.scope.systemPrompt.sections.length, 1)
+  // Recomposed twice, the route line did not fire: `ours` is a top-level
+  // session, and a second pass over a child logs nothing again either.
+  assert.deepEqual(host.infos, [])
 }
 
 // ── the helpers stay honest when called directly ─────────────────────────────

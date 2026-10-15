@@ -127,6 +127,27 @@ export function depthOf(agent) {
 }
 
 /**
+ * The provider/model a delegated child was created with — the one line the
+ * terminal says about a child's route. A child does not choose a route: it
+ * INHERITS the parent's, resolved into its creation options
+ * (`resolveChildAgentOptions()`, `packages/subagent/subagent/src/child-agent.ts:99-120`,
+ * reached from `subagent-in-process-driver/src/index.ts:140`), and this preset
+ * turns model selection off, so no call can override it. The model is read
+ * through `sessionModel()` for the same reason the persona is: a child's own
+ * Session selection wins where one exists, and `agent.options.model` is the
+ * fallback rather than the answer.
+ * @param ctx - the preset's context, for the optional projection read.
+ * @param agent - the delegated child.
+ * @returns `provider/model`, or whichever half the harness stated, or `unknown`.
+ */
+export function childRoute(ctx, agent) {
+  const provider = agent?.options?.provider
+  const model = sessionModel(ctx, agent)
+  const halves = [provider, model].filter(half => typeof half === 'string' && half.trim() !== '')
+  return halves.length === 0 ? 'unknown' : halves.join('/')
+}
+
+/**
  * A top-level session's whole system prompt: the per-model text from the table
  * `chat-agent` owns, plus the delegation note. One table, one note.
  * @param modelId - the model the session's next request will use.
@@ -237,11 +258,19 @@ export function installGuard(tools, allowed, reason, warn) {
  */
 export function apply(ctx, config) {
   const warned = new Set()
+  // `ctx.logger` is a Context PROPERTY, not a provided service: cordis assigns
+  // it in the Context constructor (`vendor/cordis/src/context.ts:81`) and
+  // `get()` reads the service store only (`reflect.ts:233-243`), so
+  // `ctx.get('logger')` is `undefined` and every line sent through it was
+  // silently dropped.
   const warn = (message) => {
     if (warned.has(message)) return
     warned.add(message)
-    ctx.get('logger')?.warn(`chat-subagent/delegator: ${message}`)
+    ctx.logger.warn(`chat-subagent/delegator: ${message}`)
   }
+  // Diagnostics only, and never deduplicated: two children of one session are
+  // two events, and the child id is what tells them apart.
+  const info = (message) => ctx.logger.info(`chat-subagent/delegator: ${message}`)
 
   const { presetId, subagentTools, delegationNote } = normalizeConfig(config, warn)
   const subagentAllowed = new Set(subagentTools)
@@ -284,6 +313,8 @@ export function apply(ctx, config) {
       }
       installGuard(tools, subagentAllowed, SUBAGENT_DENIAL, warn)
       installRestriction(tools, subagentTools, warn)
+      // Last, so a diagnostic can never sit between the child and its mask.
+      info(`subagent ${String(agent?.id)} route ${childRoute(ctx, agent)}`)
     } catch (error) {
       warn(`masking agent ${String(agent?.id)} failed: ${String(error)}`)
     }

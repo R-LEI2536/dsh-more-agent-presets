@@ -86,7 +86,11 @@ export function apply(ctx) {
   // `^0.2.0-rc.1`, so a build without `guard()` must degrade loudly rather than
   // fail the preset composition.
   if (typeof ctx.tools.guard !== 'function') {
-    ctx.get('logger')?.warn(
+    // `ctx.logger`, not `ctx.get('logger')`: cordis assigns the logger in the
+    // Context constructor, so it is a property rather than a provided service
+    // and `get()` returns undefined for it — a warning sent that way never
+    // reaches the terminal.
+    ctx.logger.warn(
       'chat-agent/no-tools: this DSH build has no tools.guard(); a tool registered in the agent scope stays callable (see CHANGELOG 1.6.1)',
     )
     return
