@@ -55,7 +55,7 @@
 
 ### 通用聊天模式 (`chat-agent`)
 
-纯聊天助手：不挂任何工具行，通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽**继承得来**的工具，并用 `ctx.tools.guard(...)` 拒绝执行注册在 **agent 自身 scope** 里的工具——因此它不能产生动作：不能读写文件、不能执行命令、不能联网搜索、也不能创建队友。两条边界是刻意的，机制与源码指引写在 `presets/chat-agent/no-tools.mjs`：其一，preset 层的 restriction 只覆盖继承面（全局层 + 每个祖先 scope），agent 自身 scope 的注册天然豁免，所以挂了这类插件的 profile（例如 `@deepseek-ai/dsh-experimental-agent-team-profile`，它的 9 个 Team 工具会注册进**每个** root agent 的 `agent.ctx`）下，那些工具**仍会列在**该会话的工具目录里，guard 负责让它们的调用返回拒绝而不是真的执行；其二，这个拒绝与「已被过滤的工具」返回的 `unknown tool` 不是同一种。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 / Gemini 3.7 · 3.8 文案，表源见 `presets/chat-agent/model-personas.json`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
+纯聊天助手：不挂任何工具行，通过 preset 层的 `ctx.tools.restrict({ allow: [] })` 屏蔽**继承得来**的工具，并用 `ctx.tools.guard(...)` 拒绝执行注册在 **agent 自身 scope** 里的工具——因此它不能产生动作：不能读写文件、不能执行命令、不能联网搜索、也不能创建队友。两条边界是刻意的，机制与源码指引写在 `presets/chat-agent/no-tools.mjs`：其一，preset 层的 restriction 只覆盖继承面（全局层 + 每个祖先 scope），agent 自身 scope 的注册天然豁免，所以挂了这类插件的 profile（例如 `@deepseek-ai/dsh-experimental-agent-team-profile`，它的 9 个 Team 工具会注册进**每个** root agent 的 `agent.ctx`）下，那些工具**仍会列在**该会话的工具目录里，guard 负责让它们的调用返回拒绝而不是真的执行；其二，这个拒绝与「已被过滤的工具」返回的 `unknown tool` 不是同一种。**系统提示词按当前模型自动切换**（Default / Codex GPT-5 · GPT-6 / Qwen / DeepSeek-R1 / Gemini 3.7 · 3.8 文案，表源见 `presets/shared/model-personas.json`），所选文案即该会话的**全部**提示词。自动压缩（上下文压力／溢出触发）与人工 `/compact` 命令保留，因为聊天会话天然很长。当你想要一个聊天对象、而不是一个会动你机器的 agent 时用它。
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
@@ -63,7 +63,7 @@
 
 **真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
 
-**系统提示词按当前模型自动切换**：文案来自 `chat-agent` 拥有的那张表（`presets/chat-agent/model-personas.json`，由该 preset 的 `model-persona.mjs` 读取），再拼上一段派活说明，两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
+**系统提示词按当前模型自动切换**：文案来自**两个聊天 preset 共用**的那张表（`presets/shared/model-personas.json`，由 `presets/shared/model-persona.mjs` 读取，`chat-agent` 也把它当作自己的全部提示词），再拼上一段派活说明，两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
 
 **要改子 agent 的工具名单**，就在 profile patch 里按 Loader 行 id 覆盖这条声明。`config` 是整体替换，每一行都要重述；而且只有本 preset 自己那几行真正注册的名字才能写进名单——`tools.restrict()` 会拒绝未知名字：
 
@@ -126,7 +126,7 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 ## 行为说明
 
 **声明式 preset（DSH 0.1.7+）：**
-- 每个 preset 是一行声明在 bundle patch 中的 `@deepseek-ai/dsh-agent-preset`；`config.plugins` 持有子插件行（工具、提示段、带 `isolate` realm 的组，以及以包子路径 `dsh-more-agent-presets/presets/<id>/` 引用的本插件内嵌 `.mjs` 插件）。
+- 每个 preset 是一行声明在 bundle patch 中的 `@deepseek-ai/dsh-agent-preset`；`config.plugins` 持有子插件行（工具、提示段、带 `isolate` realm 的组，以及以包子路径 `dsh-more-agent-presets/presets/<id>/` 引用的本插件内嵌 `.mjs` 插件；多个 preset 共用的资源放在 `dsh-more-agent-presets/presets/shared/`）。
 - preset `id`（`chat-agent`、`chat-subagent`、`codex-coding-agent`、`iflow-coding-agent`、`iflow-cre-agent`、`pair-coding-agent`、`qwencode-coding-agent`）与旧版本一致，已有会话的选择不会失效；`chat-subagent` 是本 bundle 这次新增的一行，它是新 preset，而不是对 `chat-agent` 的修改。
 - registry 为在线会话保留声明对应的组合；修改声明只影响之后创建的 Agent。
 

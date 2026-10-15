@@ -66,7 +66,7 @@
  * (`:1111-1112`).
  */
 
-import { personaTable, pickPersona, sessionModel } from '../chat-agent/model-persona.mjs'
+import { personaTable, pickPersona, sessionModel } from '../shared/model-persona.mjs'
 
 export const name = 'chat-subagent/delegator'
 
@@ -253,7 +253,7 @@ export function apply(ctx, config) {
         const table = personaTable()
         // A function text is what makes the prompt follow the model the Session
         // selected for its NEXT request, not the one it was created with
-        // (`chat-agent/model-persona.mjs` has the measurement).
+        // (`shared/model-persona.mjs` has the measurement).
         const prompt = {
           name: 'deployment:persona-prefix',
           order: systemPrompt.getSectionOrder('DEPLOYMENT_PERSONA_PREFIX'),

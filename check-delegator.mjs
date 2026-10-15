@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { pickPersona, personaTable } from './presets/chat-agent/model-persona.mjs'
+import { pickPersona, personaTable } from './presets/shared/model-persona.mjs'
 import {
   apply,
   DELEGATION_NOTE,

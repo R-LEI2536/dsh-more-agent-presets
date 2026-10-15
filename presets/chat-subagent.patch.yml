@@ -49,9 +49,9 @@
 # `modelSelectionSettings` is deliberately off — it would register the shared
 # `list_subagent_models` tool and break "exactly one tool".
 #
-# The persona text is NOT here: `delegator.mjs` composes it from the table
-# `chat-agent` owns (`presets/chat-agent/model-personas.json`, read by
-# `presets/chat-agent/model-persona.mjs`) plus the delegation note in the plugin.
+# The persona text is NOT here: `delegator.mjs` composes it from the shared table
+# `chat-agent` also reads (`presets/shared/model-personas.json`, via
+# `presets/shared/model-persona.mjs`) plus the delegation note in the plugin.
 # One table, one copy. `persona` below is the WORKER's persona — the child's own
 # section, shadowing the deployment persona for that child alone.
 #

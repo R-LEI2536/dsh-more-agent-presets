@@ -15,7 +15,7 @@
 # `@deepseek-ai/dsh-persona` row): the text is picked per session model -- the
 # model the Session selected (`pending ?? lastUsed` of its `modelSelection`
 # projection, else `agent.options.model`) -- from the verbatim table in
-# `presets/chat-agent/model-personas.json`, which the plugin reads itself at
+# `presets/shared/model-personas.json`, which the plugin reads itself at
 # apply time. The row below carries NO `config`: the JSON file is the only copy
 # of the table, so there is nothing to keep in sync. The persona keeps
 # `complete: true` semantics (the picked text IS the whole system prompt: no
@@ -47,9 +47,12 @@
           # `model-persona.mjs` replaces the `@deepseek-ai/dsh-persona` row:
           # it picks the persona text per session model and makes it the
           # complete system prompt. The text is NOT here: the plugin reads
-          # `presets/chat-agent/model-personas.json` (the only copy) itself.
+          # `presets/shared/model-personas.json` (the only copy) itself. It sits
+          # in `presets/shared/` because `chat-subagent` reads the same table;
+          # `presets/chat-agent/model-persona.mjs` is only a re-export shim kept
+          # for overrides written against the pre-1.7.0 path.
           - id: model-persona
-            name: 'dsh-more-agent-presets/presets/chat-agent/model-persona.mjs'
+            name: 'dsh-more-agent-presets/presets/shared/model-persona.mjs'
 
           # `token-meter` stays host-plane and is resolved from here; only the
           # compaction provider and its only consumer (`command-compact`) share

@@ -27,8 +27,10 @@ _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久
 **Model persona**:
 按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。模型 id 取**会话选定**
 的那一个（`modelSelection` 投影的 `pending ?? lastUsed`，无投影时回落 `agent.options.model`），不取
-agent 创建时的 profile 默认值。唯一真源是 `presets/chat-agent/model-personas.json`，插件运行时
-直接读取；patch 的 `model-persona` 行不带 `config`，没有副本可同步。
+agent 创建时的 profile 默认值。表与插件位于 `presets/shared/`（`model-personas.json` +
+`model-persona.mjs`），因为**两个聊天 preset 共用**：`chat-agent` 把它当作全部提示词，`chat-subagent`
+导入它再追加派活说明。patch 的 `model-persona` 行不带 `config`，没有副本可同步；
+`presets/chat-agent/model-persona.mjs` 只是兼容 re-export（≤1.6.2 发布过那个路径），指向同一模块实例。
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
@@ -65,8 +67,9 @@ _Avoid_: worker（内部叫法，不是产品术语）
 > **Dev:** 那 `chat-agent` 的 preset id 是 `preset-chat-agent` 吧？
 > **Maintainer:** preset id 是 `chat-agent`；`preset-chat-agent` 只是 patch 层里的行 id，用来定位这一行 patch。
 > **Dev:** chat-agent 的 persona 文案要改，改哪里？
-> **Maintainer:** 改 `presets/chat-agent/model-personas.json` 一处即可——插件运行时直接读它，
-> patch 里没有副本；`model-personas.md` 只讲怎么选行。
+> **Maintainer:** 改 `presets/shared/model-personas.json` 一处即可——插件（`presets/shared/model-persona.mjs`）
+> 运行时直接读它，patch 里没有副本；`model-personas.md` 只讲怎么选行。注意它会**同时**改到
+> `chat-subagent`，因为两个聊天 preset 共用这份表。
 > **Dev:** 那“可派活”的 `chat-subagent` 也算 zero-tool preset 吗？
 > **Maintainer:** 不算，它是 **Delegator preset**：顶层会话只有一个工具，靠 **Agent-scope mask**
 > 装在每个 agent 自己的 scope 上；preset 层那套 restriction 会把 delegated child 一起封住，
