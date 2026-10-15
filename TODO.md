@@ -3,6 +3,19 @@
 Future work tracked here. Items are recorded as discovered; revisit and resolve
 or remove them once a decision lands.
 
+## `chat-subagent` preset
+
+- **让 delegated child 可写、可跑命令（当前刻意只读）。** 默认 `subagentTools` 只有
+  `read`/`glob`/`grep`/`read_image`/`list_directory`/`todo_write`/`job_list`，所以子 agent 不能跑
+  命令、不能跑测试、不能改文件。放开要同时做两件事，缺一不可：
+  - 在 `presets/chat-subagent.patch.yml` 里挂上工具行：`tool-bash`（win32 上是 `tool-pwsh`）；
+    `write`/`edit` 已经随 `tool-fs` 的 `read` 一起注册，行本身不用改；
+  - 把名字加进 `delegator` 行的 `config.subagentTools` —— `tools.restrict()` 只接受**当时已注册**
+    的名字，名单里写没有挂载的工具会让该 agent 的 mask 降级（该名字被丢弃并警告）。
+  - 一并要决定的事：子 agent 的审批策略固定为 `never`、沙箱随父会话，因此"可写"意味着它能在父会话
+    的沙箱范围内改文件，而任何需要审批的操作会被自动拒绝。想要更细的 per-child 权限，得先有 DSH 侧
+    的表达。`job_list` 已经在默认名单里，放开后立刻可用。
+
 ## `codex-coding-agent` preset
 
 - **Plan-mode prompt location is still wrong and needs adjustment.**
