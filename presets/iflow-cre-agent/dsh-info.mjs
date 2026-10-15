@@ -1,5 +1,13 @@
 /**
  * DSH runtime information plugin.
+ *
+ * Locating the checkout happens in `apply()`, i.e. at MOUNT, and the preset
+ * registry awaits every child row while it activates (`register()` ->
+ * `activate()` -> `mountPreset()` -> `auditRows()`,
+ * `packages/preset/agent-preset-registry/src/index.ts:80-118`,
+ * `:188-212`). Anything slow or non-terminating here does not fail a row — it
+ * stalls DSH startup, before any preset is even selected. The walk below is
+ * therefore bounded by the filesystem root, not by a POSIX root literal.
  */
 
 import { dirname, resolve } from 'node:path'
@@ -9,7 +17,34 @@ export const name = 'dsh-info'
 
 export const inject = ['systemPrompt']
 
-function resolveDshRoot() {
+/** Checkout marker: the directory whose presence identifies the DSH source root. */
+const MARKER = ['packages', 'boot', 'app-boot']
+
+/**
+ * Walk up from `start` to the checkout root, stopping at the filesystem root.
+ *
+ * Termination is `dirname(dir) === dir`, NOT a comparison against the POSIX
+ * root literal `'/'`: the POSIX root is only one of the roots this runs on. On
+ * Windows `dirname('C:\\')` is `'C:\\'`, and a non-absolute cursor fixes at
+ * `'.'`, so the literal comparison never became true and the walk spun forever
+ * on the event loop — `mountPreset()` awaited it, and `dsh` never finished
+ * starting. Reached from v1.3.3 through v1.6.1.
+ * @param start - directory to begin the search at.
+ * @param dirnameOf - the platform's `dirname`. Injected so the Windows rule can
+ *   be replayed on Linux through `node:path`'s `win32` implementation.
+ * @returns the ancestor holding the marker, or undefined when none does.
+ */
+export function dshRootAbove(start, dirnameOf = dirname) {
+  let dir = start
+  for (;;) {
+    if (existsSync(resolve(dir, ...MARKER))) return dir
+    const parent = dirnameOf(dir)
+    if (parent === dir) return undefined
+    dir = parent
+  }
+}
+
+export function resolveDshRoot() {
   // Strategy 1: DSH_ROOT environment variable
   if (process.env.DSH_ROOT) {
     return process.env.DSH_ROOT
@@ -17,13 +52,7 @@ function resolveDshRoot() {
 
   // Strategy 2: From entry script path
   if (process.argv[1]) {
-    let dir = dirname(process.argv[1])
-    while (dir !== '/') {
-      if (existsSync(resolve(dir, 'packages', 'boot', 'app-boot'))) {
-        return dir
-      }
-      dir = dirname(dir)
-    }
+    return dshRootAbove(dirname(process.argv[1])) ?? 'UNKNOWN'
   }
 
   return 'UNKNOWN'
