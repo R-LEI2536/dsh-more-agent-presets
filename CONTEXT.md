@@ -39,7 +39,7 @@ preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承�
 _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，只过滤子 agent 的工具）
 
 **Delegator preset**:
-顶层会话只能派活的 preset：可调用面是 `subagent` 与它的路由伙伴 `list_subagent_models`。这个面由 per-agent 的 `guard` 钉住，而不是靠 `config.plugins` 里缺少工具行——被派出去的子 agent 仍需真实工具，而它继承的是同一个 preset。这条 preset 开着 `modelSelectionSettings: true`，官方插件因此把这两个工具都注册进**每个 agent 自己的 scope**；而 `tools.restrict()` 拒绝 scope-local 名字，所以 agent scope 上的 mask 是**空 allow-list**（`allow: []`）而不是点名列表：它只隐藏继承面，own layer 留给 guard 管。
+顶层会话只能派活的 preset：可调用面是**一个工具** `subagent`。这面不是靠 `config.plugins` 里缺少工具行钉住的——被派出去的子 agent 仍需真实工具，而它继承的是同一个 preset。工具行是一个运行时 router（`presets/chat-subagent/delegation-router.mjs`）：装了 `dsh-plugin-subagent-director` 就挂它（`subagent` 带 per-call `provider`/`model`/`reasoningEffort`；显式路由须落在 Host 官方 `subagent-model-selection` 的 `allowedModels` 白名单内，越权点名报错并列出可用路由），没装就退回官方 `@deepseek-ai/dsh-tool-subagent` 且不开模型选择。两个分支都把 `subagent` 注册在 preset 的**常驻层**上，于是 `subagent` 是一个继承得来、可被 restrict 的名字；per-agent 的 mask 因此回到**点名 allow-list**（`restrict({ allow: ['subagent'] })`）加同层 `guard`。旧的**空 allow-list** 设计属于已移除的 `modelSelectionSettings: true` 路径（它把工具注册进每个 agent 自己的 scope，restriction 无法点名 scope-local 名字），随那条路径一起退场。
 _Avoid_: one-tool preset（易与 zero-tool preset 混淆）、subagent preset
 
 **Agent-scope mask**:
@@ -59,7 +59,7 @@ _Avoid_: worker（内部叫法，不是产品术语）
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。
 - “minimal” 容易被读成「零工具」：`minimal` 是随 DSH 发布的 preset、挂了持久 shell；本仓库里零工具的是 `chat-agent`。
 - “model-persona” 不是 persona 行的别名：前者是按模型切换文案的插件行（`model-persona.mjs`），后者是 `@deepseek-ai/dsh-persona` 的静态 `prefix` 行（chat-agent 已不用后者）。
-- “只有一个工具”已经不再准确：`chat-subagent` 顶层可调用的是 `subagent` 与 `list_subagent_models` 两个（后者用来查授权路由），子 agent 目录里还会多出这两个的 ghost（被 guard 拒绝）。说**可调用面**比说“只有一个工具”准确。
+- “只有一个工具”的说法重新成立：`chat-subagent` 顶层可调用的就是**一个**工具 `subagent`（模型点名这类可选能力来自 router 在挂载时选定的分支），子 agent 目录也不再出现它的 ghost——旧路径把两个工具注册进会话的 own layer，才产生过被 guard 拒绝的 ghost。
 
 ## Example dialogue
 

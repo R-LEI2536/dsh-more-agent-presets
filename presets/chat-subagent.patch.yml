@@ -37,41 +37,32 @@
 # this deployment does not have, so a missing tool costs that tool and never the
 # delegation.
 #
-# THE DELEGATION TOOL AND ITS ROUTE COMPANION. `@deepseek-ai/dsh-tool-subagent`
-# mounts one model-facing tool per instance, on the `spawn` provider (a fresh
-# child that never sees this conversation, so a task prompt must stand alone).
-# `enableRunInBackground: false` removes `run_in_background` from the schema
-# entirely, so the call waits for the child and returns its report — a
-# background start would need `job_output`/`send_message` to collect, and those
-# are tools this preset does not have. `backgroundMode: one-shot` is the
-# matching policy. `maxDepth: 1` states the recursion budget outright: the child
-# may not delegate again (the guard refuses it, and the depth check throws).
-#
-# `modelSelectionSettings: true` is what lets the top-level model choose the
-# child's route. It adds `provider`/`model`/`reasoning_effort` to the call's
-# schema (`tool-subagent/src/index.ts:400-419`) and mounts the companion tool
-# `list_subagent_models`, so the model can discover the authorized routes. It
-# has one consequence this preset has to design around: the plugin then
-# registers BOTH tools in each Agent's OWN scope instead of the preset plane
-# (`:608-611`, `:665-681`), and `tools.restrict()` refuses scope-local names
-# (`core/tools/src/index.ts:1092,1114-1118`). `delegator.mjs` therefore cannot
-# mask with `allow: ['subagent']` any more and uses an EMPTY allow-list, which
-# hides the whole inherited plane and leaves the agent's own layer alone
-# (`:1194-1208`). A top-level session may therefore CALL two tools, and a
-# delegated child lists the same two as ghosts that its guard refuses.
-#
-# PRECONDITION: this row needs the `subagent-model-selection-settings` row in
-# the Host scope. Without it the row fails to load (`:613-618`) and ONE failed
-# row marks the whole preset broken. The authorized routes come from that Host
-# setting, never from this file, and only NEW sessions sample it — a live
-# session keeps the policy it recorded (`:620-646`).
+# THE DELEGATION TOOL, AND ITS OPTIONAL MODEL CHOICE. The row is a runtime
+# ROUTER (`delegation-router.mjs`). When the profile has
+# `dsh-plugin-subagent-director` installed it mounts that plugin's `subagent`
+# tool: per-call `provider`/`model`/`reasoningEffort` args (camelCase),
+# resolving call args > plugin default > inherit the parent, and constrained
+# to the Host `subagent-model-selection.allowedModels` list — an unauthorized
+# explicit route errors with the available list; unauthorized defaults fall
+# back to inheritance. When the plugin is absent it mounts the official
+# `@deepseek-ai/dsh-tool-subagent` WITHOUT model selection, and the child
+# inherits the parent session's route. Both rows are `spawn` transports with
+# `enableRunInBackground: false` (`run_in_background` is entirely absent from
+# the schema, the call waits and returns the report) and `maxDepth: 1` (the
+# child may not delegate again; its guard refuses it and the depth check
+# throws). The child persona both branches share is declared inside the router
+# file. The static `modelSelectionSettings: true` form is GONE ON PURPOSE: its
+# per-agent injection fibers crashed on overlapping plugin reloads and left
+# sessions with no delegation tool at all (CHANGELOG has the incident), so
+# this preset never uses that flag again.
 #
 # The top-level persona text is NOT here: `delegator.mjs` composes it from the
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
 # `presets/shared/model-persona.mjs`) plus the delegation note it reads from
 # `presets/chat-subagent/delegation-note.md`. One table, one note, each in one
-# file. `persona` below is the CHILD's own persona — a section in the child's
-# scope alone, shadowing the deployment persona there.
+# file. The CHILD's persona lives in `delegation-router.mjs` too — the
+# `persona` the official branch carries and the default role the director
+# branch carries are both built from that one constant.
 #
 # A pure `insert` with no `!!js` expression: nothing here is platform- or
 # environment-conditional.
@@ -82,7 +73,7 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "只与子 agent 交互，并可指定它用哪个模型：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "只与子 agent 交互的聊天模式：把任务交给只读子 agent 去查、去读，自己专注对话。装了 dsh-plugin-subagent-director 时可为每次委派点名子模型。"
         plugins:
           # The two masks plus the delegator persona. `presetId` must equal this
           # declaration's `id` (it is what tells the plugin which live agents
@@ -104,23 +95,11 @@
                 - todo_write
                 - job_list
 
-          # The one model-facing tool (header).
-          - id: tool-subagent
-            name: '@deepseek-ai/dsh-tool-subagent'
-            config:
-              provider: spawn
-              # Lets the top-level model pick the child's route. The routes it may
-              # pick come from the Host `subagent-model-selection-settings` row.
-              modelSelectionSettings: true
-              toolName: subagent
-              backgroundMode: one-shot
-              enableRunInBackground: false
-              maxDepth: 1
-              persona: >-
-                You are a delegated read-only subagent of a chat session. Work only through the tools
-                in your catalog, keep the investigation tight, and answer with a concise report the
-                delegating agent can act on: what you checked, what you found, and anything you could
-                not determine. You cannot modify files, run commands, or delegate further.
+          # The delegation row: a runtime router, not a package. Whichever
+          # branch it mounts registers `subagent` on this preset's standing
+          # plane, where the named mask in `delegator.mjs` can reach it.
+          - id: delegation-router
+            name: 'dsh-more-agent-presets/presets/chat-subagent/delegation-router.mjs'
 
           # The child's tool sources; the top-level session sees none of them.
           - id: tool-fs

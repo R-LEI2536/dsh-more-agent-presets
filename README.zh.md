@@ -59,11 +59,11 @@
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
-能力是**派活工具** `subagent` 加它的路由伙伴 `list_subagent_models` 的聊天助手。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: [] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。这个列表**故意是空的**，而不是写上 `subagent`：这一行开着 `modelSelectionSettings: true`，官方插件因此把两个工具都注册进**每个 agent 自己的 scope**，而 `tools.restrict()` 拒绝 scope-local 名字——点名的话第一个名字就抛错、被丢掉，整个 mask 等于没装。空列表隐藏全部继承面、只放过 agent 自己这一层；可调用面由 guard 钉在那两个名字上，会话里能看到的其它工具一律返回拒绝。该会话自己不能产生动作；它调用 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+可调用面是**一个**派活工具 `subagent` 的聊天助手。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册点名 allow-list `ctx.tools.restrict({ allow: ['subagent'] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。名单**点名** `subagent`，而且点得出来：这行框定工具的插件现在是一个运行时 router（`presets/chat-subagent/delegation-router.mjs`），无论它挂上哪个实现，`subagent` 都注册在 preset 的**常驻层**上——两个分支的注册都由行自己的 fiber 负责——因此它是 `tools.restrict()` 接受的继承面名字，不再是已废弃路径产生的 scope-local 名字。点名列表隐藏会话继承到的其余一切、只放过 agent 自己这一层；可调用面由 guard 钉在那一个名字上，会话里能看到的其它工具——含 director 分支的随伴注册——一律返回拒绝。该会话自己不能产生动作；它调用 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）两个分支下调用都是前台的：共享的行配置设了 `enableRunInBackground: false`（`run_in_background` 参数根本不出现在 schema 里）与 `backgroundMode: one-shot`，都走 `spawn` transport，并用 `maxDepth: 1` 把递归预算写死。
 
-**子 agent 用哪个模型，由顶层模型决定。** `modelSelectionSettings: true` 给 `subagent` 调用加上 `provider`、`model`、`reasoning_effort` 三个参数，并挂上 `list_subagent_models`，让模型查得到 Host 授权的路由；随后子 agent 就按点名的路由创建，而不是继承父会话的路由。那条 Host 行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 是**前置条件**：没有它，本 preset 这一行会加载失败，而一行失败会让整个 preset 报损。它只对**新会话**生效，旧会话沿用已记录的策略。不带路由的调用仍然继承父会话，终端里那行 `[I]` 路由日志会报出子 agent 最终落在哪条路由上。
+**子 agent 能否被点名路由，由 router 在挂载时决定。** 这行工具会在挂载时 import `dsh-plugin-subagent-director`。装了它（`dsh plugin --profile <name> add dsh-plugin-subagent-director`），router 就挂载该包：它的 `subagent` 带 per-call `provider`、`model`、`reasoningEffort` 三个参数（驼峰——官方行把最后一个拼作蛇形的 `reasoning_effort`），解析顺序为调用参数 > 插件默认 > 继承父会话的路由；显式路由只能点名 Host 官方 `subagent-model-selection` 的 `allowedModels` 白名单内的模型，点到白名单外会报错，报错信息列出可用路由。router 配一个 defaultRole（id `chat-subagent-child`）承载子 agent 的 persona，不带显式路由参数的调用继承父会话模型。没装这个包，import 以 `ERR_MODULE_NOT_FOUND` 失败，而这个失败**就是**备胎路径本身：router 退回挂载官方 `@deepseek-ai/dsh-tool-subagent` 且不开模型选择，子 agent 一律继承父会话路由，preset 不报损。两个分支都会打同一行终端日志 `[I] chat-subagent/delegator: subagent <id> route <provider>/<model>`，报出子 agent 最终落在哪条路由上。本 preset 不会再回到静态 `modelSelectionSettings: true` 那条路：那个 flag 曾让官方插件把工具注册进每个 agent 自己的 scope，其按插件实例记账的注册状态在重载重叠时相撞，整个会话连派活工具都注册不上。缺陷在上游 DSH（`tool-subagent/src/index.ts:665-683`），另行上报——这个 router 是绕开它，而非修好它，且有源码守卫检查阻止这个 flag 回进 preset。
 
-**真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
+**真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会通过注册表逐个读名字（`tools.get(name, agent)`，只读、不产生 `tools/change`），把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
 
 **系统提示词按当前模型自动切换**：文案来自**两个聊天 preset 共用**的那张表（`presets/shared/model-personas.json`，由 `presets/shared/model-persona.mjs` 读取，`chat-agent` 也把它当作自己的全部提示词），再拼上一段派活说明（`presets/chat-subagent/delegation-note.md`，挂载时逐字读入），两者合起来就是该会话的**全部**提示词。自动压缩（上下文压力／溢出）、人工 `/compact` 命令与工具结果剪枝都保留：子 agent 会 grep 仓库，它的工具结果需要剪枝，尽管顶层会话根本不产生工具结果。
 
@@ -77,7 +77,7 @@
     id: chat-subagent
     order: 16
     name: "通用聊天模式 · 可派活"
-    description: "只与子 agent 交互，并可指定它用哪个模型：把任务交给只读子 agent 去查、去读，自己专注对话。"
+    description: "只与子 agent 交互的聊天模式：把任务交给只读子 agent 去查、去读，自己专注对话。装了 dsh-plugin-subagent-director 时可为每次委派点名子模型。"
     plugins:
       - id: delegator
         name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'
@@ -124,6 +124,8 @@ dsh plugin --profile web add github:R-LEI2536/dsh-more-agent-presets
 重启 Web profile，然后在创建会话时选择 preset。
 
 本插件是一个**声明式 preset bundle**：安装后通过 `dsh.bundle.patch` 向 profile 注入 7 行 `@deepseek-ai/dsh-agent-preset` 声明（每个 preset 一个声明，位于 `presets/<id>.patch.yml`）。声明行由 `@deepseek-ai/dsh-agent-preset-registry` 注册，自动出现在 preset 选择器里。插件不向用户目录写入任何内容——不做任何文件拷贝。
+
+**`chat-subagent` 的可选增强：**向同一 profile 安装 `dsh-plugin-subagent-director`（`dsh plugin --profile web add dsh-plugin-subagent-director`）后，preset 的 `subagent` 工具获得 per-call `provider` / `model` / `reasoningEffort` 路由点名能力，显式路由受 `subagent-model-selection` 的 `allowedModels` 白名单约束。不装该包，preset 随发布形态完整可用：`subagent` 照常派活，子 agent 只继承父会话的模型。
 
 ## 行为说明
 
