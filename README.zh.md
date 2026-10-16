@@ -59,7 +59,9 @@
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
-能力就是**一个工具**的聊天助手：`subagent`。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: ['subagent'] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。于是该会话的工具目录里只有一个工具，自己不能产生动作；它调用一次 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）那次调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+能力是**派活工具** `subagent` 加它的路由伙伴 `list_subagent_models` 的聊天助手。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: [] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。这个列表**故意是空的**，而不是写上 `subagent`：这一行开着 `modelSelectionSettings: true`，官方插件因此把两个工具都注册进**每个 agent 自己的 scope**，而 `tools.restrict()` 拒绝 scope-local 名字——点名的话第一个名字就抛错、被丢掉，整个 mask 等于没装。空列表隐藏全部继承面、只放过 agent 自己这一层；可调用面由 guard 钉在那两个名字上，会话里能看到的其它工具一律返回拒绝。该会话自己不能产生动作；它调用 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+
+**子 agent 用哪个模型，由顶层模型决定。** `modelSelectionSettings: true` 给 `subagent` 调用加上 `provider`、`model`、`reasoning_effort` 三个参数，并挂上 `list_subagent_models`，让模型查得到 Host 授权的路由；随后子 agent 就按点名的路由创建，而不是继承父会话的路由。那条 Host 行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 是**前置条件**：没有它，本 preset 这一行会加载失败，而一行失败会让整个 preset 报损。它只对**新会话**生效，旧会话沿用已记录的策略。不带路由的调用仍然继承父会话，终端里那行 `[I]` 路由日志会报出子 agent 最终落在哪条路由上。
 
 **真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
 
@@ -75,7 +77,7 @@
     id: chat-subagent
     order: 16
     name: "通用聊天模式 · 可派活"
-    description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
+    description: "只与子 agent 交互，并可指定它用哪个模型：把任务交给只读子 agent 去查、去读，自己专注对话。"
     plugins:
       - id: delegator
         name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'

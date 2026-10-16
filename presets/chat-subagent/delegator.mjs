@@ -1,10 +1,11 @@
 /**
  * chat-subagent — the two masks and the delegator persona.
  *
- * The preset's invariant: a TOP-LEVEL session may call exactly one tool,
- * `subagent`; the delegated subagent may call only the read-only names its
- * declaration lists. Nothing here can be expressed as one standing-scope
- * restriction, and this module exists because of that.
+ * The preset's invariant: a TOP-LEVEL session may call only the delegation tool
+ * `subagent` and the route companion `list_subagent_models`; the delegated
+ * subagent may call only the read-only names its declaration lists. Nothing here
+ * can be expressed as one standing-scope restriction, and this module exists
+ * because of that.
  *
  * No prompt text is written in this file: the per-model half is
  * `../shared/model-personas.json` and the delegation half is
@@ -66,8 +67,19 @@
  * model-direct call under `ptc` may only name it, while the nested dispatch it
  * performs is resolved through the same restriction-filtered view. The guard
  * therefore always allows it — denying it would leave a PTC-mode session unable
- * to call its single tool — and it can never be named by `restrict()` at all
+ * to call the tool it delegates with — and it can never be named by `restrict()` at all
  * (`:1111-1112`).
+ *
+ * (7) `modelSelectionSettings: true` moves both top-level tools into each
+ * Agent's OWN scope (`tool-subagent/src/index.ts:608-611`, `:665-681`), where no
+ * restriction reaches them: `restrict()` validates against inherited names only
+ * (`packages/core/tools/src/index.ts:1194-1197,1114-1118`) and throws on a
+ * scope-local one. The top-level mask is therefore an EMPTY allow-list, which
+ * hides every inherited row and leaves the own layer alone (`:1204-1208`); the
+ * GUARD, not the mask, is what holds the callable surface at those two names. A
+ * delegated child joins the same composition and gets the same two
+ * registrations in its own scope, so its named mask cannot hide them either —
+ * its guard is what refuses both.
  */
 
 import { readFileSync } from 'node:fs'
@@ -78,8 +90,14 @@ export const name = 'chat-subagent/delegator'
 
 export const inject = ['tools', 'systemPrompt']
 
-/** The only tool a top-level session of this preset may call. */
-export const DELEGATOR_TOOLS = ['subagent']
+/**
+ * The tools a top-level session of this preset may CALL: the delegation tool,
+ * plus the route companion that `modelSelectionSettings: true` mounts beside it
+ * (`tool-subagent/src/index.ts:362`) so the model can discover the routes the
+ * Host authorizes. Both are registered in the agent's OWN scope, which is why
+ * the mask below cannot name them and the guard is what bounds the surface.
+ */
+export const DELEGATOR_TOOLS = ['subagent', 'list_subagent_models']
 
 /** PTC mode's model-direct transport (`packages/core/tools/src/ptc.ts:30`). */
 export const RUN_CODE = 'run_code'
@@ -102,7 +120,7 @@ export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', impo
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
-  = 'This session is a delegator-only preset: `subagent` is the only tool. Describe the task to it instead of acting directly.'
+  = 'This session is a delegator-only preset: it delegates with `subagent` and can inspect child routes with `list_subagent_models`. Describe the task to `subagent` instead of acting directly.'
 
 /** Reason the model reads when a read-only subagent names a tool it does not have. */
 const SUBAGENT_DENIAL
@@ -289,7 +307,18 @@ export function apply(ctx, config) {
         // Guard first: every later step is an improvement, and a failure in one
         // of them must not leave the session unmasked.
         installGuard(tools, delegatorAllowed, DELEGATOR_DENIAL, warn)
-        installRestriction(tools, DELEGATOR_TOOLS, warn)
+        // An EMPTY allow-list, never a named one. `modelSelectionSettings: true`
+        // makes the row register `subagent` and `list_subagent_models` in the
+        // agent's OWN scope (`tool-subagent/src/index.ts:608-611`, `:665-681`),
+        // and `restrict()` refuses a scope-local name — its own wording is
+        // "unknown names, scope-local names ... fail", because the validation set
+        // holds inherited names only (`core/tools/src/index.ts:1194-1197,1114-1118`).
+        // A named list would throw on the first name, `installRestriction()` would
+        // drop it and install nothing, and the mask would silently stop existing.
+        // An empty list needs no name: it hides the whole inherited plane — every
+        // row this preset mounts for the child — and leaves the agent's own layer
+        // visible (`:1204-1208`), which is the delegation tool plus its companion.
+        tools.restrict({ allow: [] })
         // The picked text is the session's ENTIRE prompt (a `complete` section
         // collapses the assembly) and no runtime-context block reaches it —
         // the two knobs `chat-agent` sets for the same reason.
