@@ -6,38 +6,47 @@
 # carry the task out — plus the read-only `list_subagent_models` the
 # `modelSelectionSettings` opt-in registers, which only reports the routes the
 # session may name. The delegated subagent is a real agent with a real
-# (read-only) tool set; the top-level session is the delegator.
+# (read-only) tool set; the top-level session is the delegator. Its CATALOG is
+# this whole preset: the rows below are visible to it, and the guard refuses
+# every call except those two names.
 #
-# WHY THE MASK IS NOT DECLARED HERE. The obvious shape — a preset-plane
-# `ctx.tools.restrict({ allow: [] })` next to these rows — is wrong,
+# WHY THERE IS NO TOOL RESTRICTION HERE, in two steps. The obvious shape — a
+# preset-plane `ctx.tools.restrict({ allow: [] })` next to these rows — is wrong,
 # and silently so: a delegated child JOINS ITS PARENT'S PRESET
 # (`applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`,
 # `packages/subagent/subagent/src/child-agent.ts:200-219`), and the standing
 # scope's restriction is on the child's chain too, so the child would inherit
 # the same one-tool mask and the delegation would accomplish nothing. A
 # restriction can only narrow, so the child's own `toolFilter` cannot undo it.
-# The mask therefore lives in `delegator.mjs`, registered per agent on that
-# agent's OWN scope, which a delegated child does not inherit (its scope parent
-# is this preset's standing scope, not the parent Agent's scope). Children get
-# their own mask from the same plugin. `delegator.mjs` carries the mechanism
-# with source pointers.
+# The per-agent shape is wrong too, and that one is measured: `restrict()`
+# notifies `tools/change` where `tools.guard()` does not, and the official
+# delegation plugin installs into a live Agent on exactly that event — so an
+# agent-scope restriction installed from `agent/created` gave one scope two
+# installs, the second threw `tool "list_subagent_models" is already registered
+# in this scope`, its `install()` aborted before `mount()`, and the session got
+# NO delegation tool at all (1.7.3, live on `dev_web`). This preset therefore
+# installs a GUARD and no restriction: `delegator.mjs` puts one guard on this
+# preset's standing plane and decides per CALLING agent, so the root session is
+# refused everything but `subagent` + `list_subagent_models`, and a delegated
+# child is refused everything but its declared read-only names. `delegator.mjs`
+# carries the mechanism with source pointers.
 #
 # WHY THESE TOOL ROWS. On the `web` profile the host plane's model-facing rows
 # are all disabled (`@deepseek-ai/dsh-web-app` `cordis.patch.yml:430-556`), so
-# what an agent sees is exactly what its preset mounts — and the child inherits
-# this preset's rows, not the top-level session's mask. These four rows are the
+# what an agent sees is exactly what its preset mounts, and the child inherits
+# this preset's rows like the root session does. These four rows are the
 # only source of the names `subagentTools` lists: `read` (plus `write`/`edit`,
-# hidden from the child and shadowed for the top-level session), `glob`/`grep`,
-# `todo_write`, and the `job_*` family. `write`/`edit`/`bash` are deliberately
+# which the guard refuses for both agents), `glob`/`grep`, `todo_write`, and the
+# `job_*` family. `write`/`edit`/`bash` are deliberately
 # out of the default list: the subagent works read-only in this release (see
 # TODO.md for the writable/command-capable follow-up).
 #
 # Two names in `subagentTools` are NOT ours and may be absent from a deployment:
 # `read_image` registers only while an attachment store is mounted
 # (`packages/fs/tool-fs/src/index.ts:67-72`), and `list_directory` comes from a
-# third-party profile row. `delegator.mjs` probes each name and drops the ones
-# this deployment does not have, so a missing tool costs that tool and never the
-# delegation.
+# third-party profile row. Nothing probes for them any more: the guard allows
+# those names, and a name that is not registered is simply not in the catalog, so
+# a missing tool costs that tool and never the delegation.
 #
 # THE ONE TOOL THAT ACTS. `@deepseek-ai/dsh-tool-subagent` mounts one
 # model-facing delegation tool per instance, on the `spawn` provider (a fresh
@@ -47,19 +56,18 @@
 # background start would need `job_output`/`send_message` to collect, and those
 # are second tools this preset does not have. `backgroundMode: one-shot` is the
 # matching policy. `maxDepth: 1` states the recursion budget outright: the child
-# may not delegate again (its mask keeps only the read-only names, and the guard
-# refuses `subagent` itself).
+# may not delegate again (the guard's child branch keeps only the read-only names
+# and does not include `subagent`).
 #
 # WHY `modelSelectionSettings: true` HERE TOO. With the flag on, the top-level
 # session gains the optional `provider`/`model`/`reasoning_effort` parameters on
 # `subagent`, and `list_subagent_models` to read the Host's authorized routes —
 # so a chat session can name the child's model like the five coding presets do.
-# The price is a catalog of TWO entries, one acting and one read-only. The flag
-# is also a row-level switch on WHERE the tool registers: it moves from this
-# preset's standing plane to each Agent's OWN layer (`delegator.mjs` point 8),
-# where `restrict()` cannot name it. That is why `delegator.mjs` decides the
-# top-level mask from the registry at runtime and seals the inherited surface
-# with `restrict({ allow: [] })`.
+# The flag is also a row-level switch on WHERE the tool registers: it moves from
+# this preset's standing plane to each Agent's OWN layer, which is precisely the
+# plane no restriction reaches — another reason the enforcement here is a guard
+# rather than a mask (see above). The five coding presets keep the flag too, so
+# the only difference is that this preset may CALL one of the tools it lists.
 #
 # The top-level persona text is NOT here: `delegator.mjs` composes it from the
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
@@ -77,10 +85,10 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "顶层只调用 subagent 干活（可为子 agent 指定模型）：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "顶层只调用 subagent 干活（可为子 agent 指定模型）；目录里其他工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
         plugins:
-          # The two masks plus the delegator persona. `presetId` must equal this
-          # declaration's `id` (it is what tells the plugin which live agents
+          # The delegation guard plus the delegator persona. `presetId` must equal
+          # this declaration's `id` (it is what tells the plugin which live agents
           # belong to this preset during `tools/change` reconciliation);
           # `subagentTools` is the single source of the child's read-only list.
           # An optional `delegationNote` here would REPLACE the shipped
@@ -119,7 +127,8 @@
                 delegating agent can act on: what you checked, what you found, and anything you could
                 not determine. You cannot modify files, run commands, or delegate further.
 
-          # The child's tool sources; the top-level session sees none of them.
+          # The child's tool sources. They are visible in the top-level session's
+          # catalog too, and refused there by the guard.
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
           - id: tool-fs-search
