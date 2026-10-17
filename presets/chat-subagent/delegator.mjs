@@ -85,6 +85,9 @@
 import { readFileSync } from 'node:fs'
 
 import { personaTable, pickPersona, sessionModel } from '../shared/model-persona.mjs'
+// The two route readers live in `presets/shared/`: the five coding presets log
+// the same line through `subagent-route-log.mjs`, so there is one implementation.
+import { childRoute, depthOf } from '../shared/subagent-route-log.mjs'
 
 export const name = 'chat-subagent/delegator'
 
@@ -120,44 +123,9 @@ const DELEGATOR_DENIAL
 const SUBAGENT_DENIAL
   = 'This delegated subagent is read-only: it cannot run commands, write or edit files, or delegate further. State the limitation in your reply.'
 
-/**
- * The agent's delegation depth, read the way `@deepseek-ai/dsh-subagent` reads it
- * (`packages/subagent/subagent/src/depth.ts:28-36`): the persisted header is the
- * monotone floor and the merge-extensible runtime field may only deepen it,
- * because a resumed child arrives with fresh options and counting it from zero
- * would let it delegate as if it were top-level.
- * @param agent - the created agent.
- * @returns its non-negative depth, zero for a top-level session.
- */
-export function depthOf(agent) {
-  const header = agent?.session?.header?.delegationDepth
-  const runtime = agent?.options?.subagentDepth
-  return Math.max(
-    typeof header === 'number' && Number.isSafeInteger(header) ? header : 0,
-    typeof runtime === 'number' && Number.isSafeInteger(runtime) ? runtime : 0,
-  )
-}
-
-/**
- * The provider/model a delegated child was created with — the one line the
- * terminal says about a child's route. A child does not choose a route: it
- * INHERITS the parent's, resolved into its creation options
- * (`resolveChildAgentOptions()`, `packages/subagent/subagent/src/child-agent.ts:99-120`,
- * reached from `subagent-in-process-driver/src/index.ts:140`), and this preset
- * turns model selection off, so no call can override it. The model is read
- * through `sessionModel()` for the same reason the persona is: a child's own
- * Session selection wins where one exists, and `agent.options.model` is the
- * fallback rather than the answer.
- * @param ctx - the preset's context, for the optional projection read.
- * @param agent - the delegated child.
- * @returns `provider/model`, or whichever half the harness stated, or `unknown`.
- */
-export function childRoute(ctx, agent) {
-  const provider = agent?.options?.provider
-  const model = sessionModel(ctx, agent)
-  const halves = [provider, model].filter(half => typeof half === 'string' && half.trim() !== '')
-  return halves.length === 0 ? 'unknown' : halves.join('/')
-}
+// Re-exported for the callers that have always imported the route readers from
+// this file (`check-delegator.mjs`); the implementation is the shared module.
+export { childRoute, depthOf }
 
 /**
  * A top-level session's whole system prompt: the per-model text from the table

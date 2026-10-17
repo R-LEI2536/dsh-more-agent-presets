@@ -102,6 +102,15 @@ That row must exist in the profile. The shipped `dsh-base` + `dsh-web-app` stack
 
 `chat-subagent` deliberately leaves the flag off: it would register the shared `list_subagent_models` tool and break that preset's one-tool invariant (see above). `chat-agent` mounts no tool row at all, so it has nothing to opt in.
 
+**Which model a child actually ran on is a terminal line.** Every delegation prints one, from `presets/shared/subagent-route-log.mjs` — mounted by these five presets — or from `chat-subagent`'s own `delegator`:
+
+```
+[I] pair-coding-agent/subagent-route-log: subagent 3f1c… route opencode-chat/deepseek-v4.1-flash
+[I] chat-subagent/delegator: subagent 3f1c… route opencode-go/deepseek-v4-flash
+```
+
+The line names the route the child was created with, which is the route the call asked for or the one it inherited from the parent session; `unknown` appears only when the harness stated neither half. Top-level sessions print nothing.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:

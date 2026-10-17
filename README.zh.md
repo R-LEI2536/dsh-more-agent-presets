@@ -102,6 +102,15 @@ Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默�
 
 `chat-subagent` 故意不开：开了会多注册一个共享的 `list_subagent_models` 工具，破坏那个 preset「顶层只有一个工具」的不变量（见上一节）。`chat-agent` 没有任何工具行，不涉及。
 
+**子 agent 究竟跑在哪个模型上，看终端那一行。** 每次派活都打一行：这 5 个 preset 由 `presets/shared/subagent-route-log.mjs` 打，`chat-subagent` 由它自己的 `delegator` 打：
+
+```
+[I] pair-coding-agent/subagent-route-log: subagent 3f1c… route opencode-chat/deepseek-v4.1-flash
+[I] chat-subagent/delegator: subagent 3f1c… route opencode-go/deepseek-v4-flash
+```
+
+这一行报的是子 agent 创建时那条路由：要么是调用点名的，要么是从父会话继承的；只有当真身两半都没给出时才显示 `unknown`。顶层会话不打这一行。
+
 ## 设计理念
 
 这些 preset 在用户交互和规划方式上与 DSH 默认 prompt 有所不同：

@@ -60,6 +60,8 @@ _Avoid_: worker（内部叫法，不是产品术语）
 名单由 Host 的设置行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；缺这一行会让开了 opt-in 的 preset
 整块挂载失败，而开关只是关着时行为退回继承、不报错。本 bundle 的 5 个编程 preset 开启；`chat-subagent` 关闭，因为它会多出
 `list_subagent_models`，破坏 **Delegator preset** 的「顶层只有一个工具」。
+落脚点由终端那一行报出：`<presetId>/subagent-route-log: subagent <id> route <provider>/<model>`（5 个编程 preset 挂
+`presets/shared/subagent-route-log.mjs`；`chat-subagent` 由自己的 `delegator` 打同一行）。
 _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
 
 ## Flagged ambiguities
