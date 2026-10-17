@@ -59,7 +59,7 @@
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
-能力就是**一个工具**的聊天助手：`subagent`。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: ['subagent'] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝。于是该会话的工具目录里只有一个工具，自己不能产生动作；它调用一次 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）那次调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+能力就是**一个工具**的聊天助手：`subagent`。声明里没有任何东西去屏蔽顶层会话——屏蔽来自 per-agent 的插件 `presets/chat-subagent/delegator.mjs`，它在 `agent/created` 与 `tools/change` 两处把自己装上：在 **agent 自身 scope** 注册 `ctx.tools.restrict({ allow: ['subagent'] })`，外加与 `chat-agent` 同款的 `ctx.tools.guard(...)` 拒绝——同一个 reconcile 也负责在 agent 不再属于这个 preset 时把两样都**解除**：注册在 agent 自身 scope 上的东西比组合活得久，否则一个被切到编程 preset 的会话会一直留着派活守卫。于是该会话的工具目录里只有一个工具，自己不能产生动作；它调用一次 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）那次调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
 
 **真正干活的是被派出去的子 agent，它只读。** 屏蔽之所以不能做成 preset 层的 restriction，正是这个插件存在的理由：delegated child 会**加入父会话的同一个 preset**，preset 层的 mask 会连子 agent 一起封成一个工具，派活就毫无意义；而 restriction 只能收窄，子 agent 自己的 `toolFilter` 也解不开。agent 自身 scope 上的 mask 才让子 agent 不受影响，子 agent 随后受声明里 `subagentTools` 名单约束——默认是 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——所以插件会逐个探测名字，把本部署没有的丢掉、每个名字只警告一次，而不是让每次派活都失败。
 

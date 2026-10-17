@@ -43,7 +43,7 @@ _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，�
 _Avoid_: one-tool preset（易与 zero-tool preset 混淆）、subagent preset
 
 **Agent-scope mask**:
-注册在**每个 agent 自身 scope** 上的 `ctx.tools.restrict(...)` 与 `ctx.tools.guard(...)` 组合。preset 层（standing scope）的 restriction 会连带封住 delegated child，因为子 agent 的 scope 父级就是该 standing scope；所以“只对顶层生效”的屏蔽必须在 agent 创建后逐个安装，并按 delegation depth 分流。
+注册在**每个 agent 自身 scope** 上的 `ctx.tools.restrict(...)` 与 `ctx.tools.guard(...)` 组合。preset 层（standing scope）的 restriction 会连带封住 delegated child，因为子 agent 的 scope 父级就是该 standing scope；所以“只对顶层生效”的屏蔽必须在 agent 创建后逐个安装，并按 delegation depth 分流。**agent 自身的注册比组合活得久**：preset 切换只重排 scope 父链，不会撤销它，所以 mask 必须由 `tools/change` reconcile **双向**维护（装与拆），并在行被卸载、agent 被销毁时显式解除。
 _Avoid_: preset 层 restriction（那是 zero-tool preset 的做法）、`toolFilter`
 
 **Subagent tool list**:

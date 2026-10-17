@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.7.2] - 2026-10-17
+
+### Fixed (a session that LEFT `chat-subagent` kept its mask)
+
+- **`presets/chat-subagent/delegator.mjs` now LIFTS the mask when an agent stops composing the preset.** What the delegator registers it registers on the AGENT's own scope (`agent.ctx`), which outlives the composition that asked for it: the blank-session preset switch goes `agentPresets.select` → `recompose` → `mount` + `emit('tools/change')`, and disposing the previous revision's standing scope does not reach an agent-scope registration. `tools/change` reconciliation covered only the arriving direction, so a session created on `chat-subagent` — the preset picker's previous selection — and then switched to a coding preset kept the delegation guard and answered `list_subagent_models` with `This session is a delegator-only preset: subagent is the only tool`. Found live on `dev_web`, in a `pair-coding-agent` session.
+- **Every install records its disposer, so everything that installs can undo itself.** `installRestriction()` returns `{ kept, dispose }` and `installGuard()` returns the guard's disposer; the depth-0 persona section and its `suppressRuntimeContext()` are collected the same way. `reconcile()` lifts for agents that no longer compose the preset, `agent/disposed` frees the entry, a failed install lifts what did land instead of leaving half a mask, and disposing the row (HMR, a re-mounted revision, a removed patch) lifts everything it installed.
+- **A mask is refused for a composition that names a DIFFERENT preset**, while an agent that has joined none — `composedPreset()` answers `undefined`, e.g. a delegated child before its join — is still masked. `check-delegator.mjs` gained the lift, the re-mask after a switch back, the foreign-creation refusal, the pre-join child, row disposal, and agent disposal.
+
 ## [1.7.1] - 2026-10-17
 
 ### Added (the five coding presets can name the child's model)
