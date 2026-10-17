@@ -30,8 +30,8 @@ or remove them once a decision lands.
   命令、不能跑测试、不能改文件。放开要同时做三件事，缺一不可：
   - 在 `presets/chat-subagent.patch.yml` 里挂上工具行：`tool-bash`（win32 上是 `tool-pwsh`）；
     `write`/`edit` 已经随 `tool-fs` 的 `read` 一起注册，行本身不用改；
-  - 把名字加进 `delegator` 行的 `config.subagentTools` —— `tools.restrict()` 只接受**当时已注册**
-    的名字，名单里写没有挂载的工具会让该 agent 的 mask 降级（该名字被丢弃并警告）；
+  - 把名字加进 `delegator` 行的 `config.subagentTools` —— 这份名单就是 guard 给子 agent 的白名单；没有任何行注册的名字
+    只是不在目录里，不会像旧实现那样触发降级或警告（`restrict()` 已不再使用）。真正决定"能不能用"的是**挂没挂那一行**；
   - 改 `presets/chat-subagent/delegation-note.md`（顶层会话系统提示词里那一段；`delegator` 行也可以用
     `config.delegationNote` 覆盖它）：它现在写着"子 agent 只读、不能改任何东西、不能跑命令"。不改这一句，
     顶层会以为活干不了而把请求推掉，尽管子 agent 已经能写能跑（README 的覆盖说明里也提了这一条）。
@@ -43,11 +43,19 @@ or remove them once a decision lands.
 
 - **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话）。要让
   「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，本次刻意不做，先看实际使用情况。
-- **继续观察上游 per-Agent 安装路径**（`tool-subagent/src/index.ts:665-683`）。上一轮在 `chat-subagent` 上观察到
-  reload 重叠时注册相撞、会话拿不到派活工具；当时同一 preset 还跑着 per-agent mask 插件（`delegator.mjs` 同样监听
-  `tools/change`），而这 5 个 preset 没有该插件。若在这 5 个 preset 上复现：记录并回报上游；必要时删掉这几个
-  `modelSelectionSettings` 键，一行即可整体回退。1.7.3 起 `chat-subagent` 也走同一条 per-Agent 路径，而且它还有一层
-  mask 交互（`delegator.mjs` 监听 `agent/created` 与 `tools/change`）；要复现优先在它上面看，回退方式相同。
+- **已确认的上游缺陷（1.7.4 记录，1.7.3 实测）：两条安装路径写同一个 agent scope。** 终端原文
+  `[E] scope Error: tool "list_subagent_models" is already registered in this scope`，调用栈
+  `registerListSubagentModels (tool-subagent/src/list-models.ts:87)` ← `install (…/src/index.ts:360-362)` ← inject 回调
+  (`…/src/index.ts:676`)。触发条件是当时的 `delegator.mjs` 在 `agent/created` 里装 agent-scope restriction：`restrict()`
+  会发 `tools/change`（`packages/core/scope/src/store.ts:226-266`，`notify` 默认 true；而 `guard()` 是 `notify: false`，
+  `packages/core/tools/src/index.ts:1136-1142`），官方插件正是在 `tools/change` 上安装到活着的 agent
+  （`…/src/index.ts:693-698`），于是同一个 scope 装了两次；第二次重名抛错，`install()` 在 `mount()` 之前中止——已注册的
+  lister 与从未注册的 `subagent` 一起留在半路，会话**零工具**。上报上游时的最小修法：重名时跳过或回滚该次安装，而不是让
+  `install()` 整体抛出（它把 `registerListSubagentModels()` 放在 `mount()` 之前，且没有 try/finally）。
+- **我们的规避方式：这个 preset 一条 restriction 都不装**，强制面改为 standing guard（见 CONTEXT.md 的
+  **Delegation guard**），因此创建窗口里本插件零 `tools/change`，上述交错无法再发生。5 个编程 preset 本来就没有这层插件。
+- **若在 5 个编程 preset 上复现**：记录并回报上游；必要时删掉这些 preset spawn 行的 `modelSelectionSettings` 键，一行即可
+  整体回退（`chat-subagent` 同理，代价是失去路由参数与 `list_subagent_models`）。
 
 ## `codex-coding-agent` preset
 
