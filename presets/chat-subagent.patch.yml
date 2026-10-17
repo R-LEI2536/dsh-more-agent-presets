@@ -37,34 +37,17 @@
 # this deployment does not have, so a missing tool costs that tool and never the
 # delegation.
 #
-# THE DELEGATION TOOL AND ITS ROUTE COMPANION. `@deepseek-ai/dsh-tool-subagent`
-# mounts one model-facing tool per instance, on the `spawn` provider (a fresh
-# child that never sees this conversation, so a task prompt must stand alone).
-# `enableRunInBackground: false` removes `run_in_background` from the schema
-# entirely, so the call waits for the child and returns its report — a
-# background start would need `job_output`/`send_message` to collect, and those
-# are tools this preset does not have. `backgroundMode: one-shot` is the
-# matching policy. `maxDepth: 1` states the recursion budget outright: the child
-# may not delegate again (the guard refuses it, and the depth check throws).
-#
-# `modelSelectionSettings: true` is what lets the top-level model choose the
-# child's route. It adds `provider`/`model`/`reasoning_effort` to the call's
-# schema (`tool-subagent/src/index.ts:400-419`) and mounts the companion tool
-# `list_subagent_models`, so the model can discover the authorized routes. It
-# has one consequence this preset has to design around: the plugin then
-# registers BOTH tools in each Agent's OWN scope instead of the preset plane
-# (`:608-611`, `:665-681`), and `tools.restrict()` refuses scope-local names
-# (`core/tools/src/index.ts:1092,1114-1118`). `delegator.mjs` therefore cannot
-# mask with `allow: ['subagent']` any more and uses an EMPTY allow-list, which
-# hides the whole inherited plane and leaves the agent's own layer alone
-# (`:1194-1208`). A top-level session may therefore CALL two tools, and a
-# delegated child lists the same two as ghosts that its guard refuses.
-#
-# PRECONDITION: this row needs the `subagent-model-selection-settings` row in
-# the Host scope. Without it the row fails to load (`:613-618`) and ONE failed
-# row marks the whole preset broken. The authorized routes come from that Host
-# setting, never from this file, and only NEW sessions sample it — a live
-# session keeps the policy it recorded (`:620-646`).
+# THE ONE TOOL. `@deepseek-ai/dsh-tool-subagent` mounts one model-facing tool per
+# instance, on the `spawn` provider (a fresh child that never sees this
+# conversation, so a task prompt must stand alone). `enableRunInBackground:
+# false` removes `run_in_background` from the schema entirely, so the single
+# call waits for the child and returns its report — a background start would
+# need `job_output`/`send_message` to collect, and those are second tools this
+# preset does not have. `backgroundMode: one-shot` is the matching policy.
+# `maxDepth: 1` states the recursion budget outright: the child may not delegate
+# again (the mask also hides `subagent` from it, and the guard refuses it).
+# `modelSelectionSettings` is deliberately off — it would register the shared
+# `list_subagent_models` tool and break "exactly one tool".
 #
 # The top-level persona text is NOT here: `delegator.mjs` composes it from the
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
@@ -82,7 +65,7 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "只与子 agent 交互，并可指定它用哪个模型：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
         plugins:
           # The two masks plus the delegator persona. `presetId` must equal this
           # declaration's `id` (it is what tells the plugin which live agents
@@ -109,9 +92,6 @@
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
               provider: spawn
-              # Lets the top-level model pick the child's route. The routes it may
-              # pick come from the Host `subagent-model-selection-settings` row.
-              modelSelectionSettings: true
               toolName: subagent
               backgroundMode: one-shot
               enableRunInBackground: false
