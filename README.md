@@ -89,6 +89,19 @@ Widening that list does not rewrite the delegation note: the note is the file `p
 
 One boundary is inherited from `chat-agent` and stays: a profile that mounts the agent-team bundle still **lists** its nine Team tools for the top-level session, because an agent's own registrations are exempt from any restriction; the guard is what makes their call return a refusal instead of running. And `job_list` is inert for the subagent — it cannot start a job — but it is part of the default list so that the writable follow-up needs no second edit.
 
+### Subagent Model Selection (`qwencode` / `iflow` / `iflow-cre` / `pair` / `codex`)
+
+The five coding presets opt into the Host's subagent model-selection setting with `modelSelectionSettings: true` on their delegation row — the same one-key opt-in the shipped `standard`/`ptc`/`cordis` presets carry. The top-level Agent then gets two things:
+
+- **`list_subagent_models`** reports the routes this session may use. No arguments list the authorized providers, `provider` lists that provider's advertised models, and `provider` + `model` adds that model's reasoning efforts.
+- **`subagent`** gains the optional `provider`, `model`, and `reasoning_effort` parameters. Omit all three and the child still inherits the parent session's model — the official default, and exactly what these presets did before the opt-in.
+
+The authorized list is the Host's `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row, i.e. the "Allow Agent to select a model for subagents" panel in the Web UI. An explicit route outside that list fails with a message listing the available ones. The list is sampled when a session is created, so it only affects new sessions. With the setting off (or its list empty) the behaviour falls back to inheritance without an error.
+
+That row must exist in the profile. The shipped `dsh-base` + `dsh-web-app` stack mounts it by default, and so do the profiles in this repository; without it a preset that opts in fails to mount **as a whole**, with `tool-subagent: \`modelSelectionSettings\` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope`.
+
+`chat-subagent` deliberately leaves the flag off: it would register the shared `list_subagent_models` tool and break that preset's one-tool invariant (see above). `chat-agent` mounts no tool row at all, so it has nothing to opt in.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:
@@ -112,6 +125,7 @@ This is a limitation of how the harness consumes preset metadata, not of this pl
 ## Requirements
 
 - DeepSeek Harness **0.2.0-rc.1 or newer**. This release is a declarative preset bundle (the pre-0.1.7 `.agent-presets` directory installer no longer exists). A host on 0.1.7-rc.x skips the whole bundle through the peer compatibility gate, so update the host first.
+- The subagent model-selection opt-in needs the Host's `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row. The shipped `dsh-base` + `dsh-web-app` stack mounts it by default. Without it, a preset that opts in fails to mount as a whole.
 
 ## Install
 

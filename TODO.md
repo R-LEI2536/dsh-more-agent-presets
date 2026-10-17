@@ -19,6 +19,15 @@ or remove them once a decision lands.
     的沙箱范围内改文件，而任何需要审批的操作会被自动拒绝。想要更细的 per-child 权限，得先有 DSH 侧
     的表达。`job_list` 已经在默认名单里，放开后立刻可用。
 
+## 子 agent 模型选择（5 个编程 preset）
+
+- **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话）。要让
+  「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，本次刻意不做，先看实际使用情况。
+- **继续观察上游 per-Agent 安装路径**（`tool-subagent/src/index.ts:665-683`）。上一轮在 `chat-subagent` 上观察到
+  reload 重叠时注册相撞、会话拿不到派活工具；当时同一 preset 还跑着 per-agent mask 插件（`delegator.mjs` 同样监听
+  `tools/change`），而这 5 个 preset 没有该插件。若在这 5 个 preset 上复现：记录并回报上游；必要时删掉这几个
+  `modelSelectionSettings` 键，一行即可整体回退。
+
 ## `codex-coding-agent` preset
 
 - **Plan-mode prompt location is still wrong and needs adjustment.**

@@ -723,6 +723,9 @@
                 config:
                   provider: spawn
                   toolName: subagent
+                  # Host-owned opt-in: the model may name provider/model from the
+                  # authorized list; omitting them still inherits the parent route.
+                  modelSelectionSettings: true
                   backgroundMode: continuable
 
               - id: tool-subagent-fork

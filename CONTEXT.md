@@ -54,6 +54,14 @@ _Avoid_: 工具池、`toolFilter`
 被 `subagent` 工具创建、执行任务的子 agent：它带着自己的 delegation depth 加入父会话的同一个 preset，因此既继承 preset 的工具行，又不受父会话那份 agent-scope mask 的影响。
 _Avoid_: worker（内部叫法，不是产品术语）
 
+**Subagent model selection**:
+委派行 `@deepseek-ai/dsh-tool-subagent` 的 `modelSelectionSettings` opt-in（默认 `false`）。开启后顶层 Agent 用
+`list_subagent_models` 查 Host 授权名单，并在派活时点名 `provider`/`model`/`reasoning_effort`；三个都省略就继承父会话模型。
+名单由 Host 的设置行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；缺这一行会让开了 opt-in 的 preset
+整块挂载失败，而开关只是关着时行为退回继承、不报错。本 bundle 的 5 个编程 preset 开启；`chat-subagent` 关闭，因为它会多出
+`list_subagent_models`，破坏 **Delegator preset** 的「顶层只有一个工具」。
+_Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
+
 ## Flagged ambiguities
 
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。

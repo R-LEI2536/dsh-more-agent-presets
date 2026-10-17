@@ -89,6 +89,19 @@
 
 有一条边界是从 `chat-agent` 继承下来、无法消除的：挂了 agent-team bundle 的 profile 下，顶层会话的工具目录里仍然**会列出**那 9 个 Team 工具（agent 自身 scope 的注册天然豁免于任何 restriction），靠 guard 让它们的调用返回拒绝而不是真的执行。另外 `job_list` 对子 agent 目前是空转（它起不了后台任务），保留在默认名单里是为了以后放开"可写"时不必再改第二处。
 
+### 子 agent 模型选择（`qwencode` / `iflow` / `iflow-cre` / `pair` / `codex`）
+
+这 5 个编程 preset 的委派行开了 Host 的子模型选择开关（`modelSelectionSettings: true`），与随产品发布的 `standard`/`ptc`/`cordis` preset 是同一个一键 opt-in。顶层 Agent 因此多两样东西：
+
+- **`list_subagent_models`**：查这个会话能用的路由。不带参数列授权范围内的提供方，带 `provider` 列该提供方的模型，再带 `model` 看它的推理强度。
+- **`subagent`** 多了三个可选参数：`provider`、`model`、`reasoning_effort`。三个都省略时，子 agent 仍然继承父会话模型——这是官方默认，也正是没开这个开关前的行为。
+
+授权名单来自 Host 的 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行，就是 Web UI 里那一栏「允许 Agent 为子智能体选择模型」。名单外的显式路由会报错，报错信息列出可用路由。名单在会话创建时采样，只影响新会话。开关关掉（或名单为空）时行为回到「一律继承」，不报错。
+
+Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂，本仓库用的 profile 也都有。缺了它，开了这个开关的 preset 会**整块**挂载失败，报错原文是 `tool-subagent: \`modelSelectionSettings\` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope`。
+
+`chat-subagent` 故意不开：开了会多注册一个共享的 `list_subagent_models` 工具，破坏那个 preset「顶层只有一个工具」的不变量（见上一节）。`chat-agent` 没有任何工具行，不涉及。
+
 ## 设计理念
 
 这些 preset 在用户交互和规划方式上与 DSH 默认 prompt 有所不同：
@@ -112,6 +125,7 @@
 ## 环境要求
 
 - DeepSeek Harness **0.2.0-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在）。0.1.7-rc.x 宿主会通过 peer 兼容门整包跳过本插件，请先升级宿主。
+- 子 agent 模型选择这一项需要 Host 挂 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂这一行；缺它会让开了该开关的 preset 整块挂载失败。
 
 ## 安装
 

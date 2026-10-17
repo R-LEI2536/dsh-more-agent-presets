@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.7.1] - 2026-10-17
+
+### Added (the five coding presets can name the child's model)
+
+- **`modelSelectionSettings: true` on the `tool-subagent` row of `qwencode-coding-agent`, `iflow-coding-agent`, `iflow-cre-agent`, `pair-coding-agent` and `codex-coding-agent`.** The flag is `@deepseek-ai/dsh-tool-subagent`'s Host-owned opt-in (`src/index.ts:109`, default `false`); with it off the tool schema has no route parameters at all and the child always inherits the parent session's route (`install(ctx, undefined)`, `:608-611`). With it on, the top-level Agent also gets `list_subagent_models`, and `subagent` accepts `provider` / `model` / `reasoning_effort`, constrained to the Host `subagent-model-selection` setting's authorized list — an explicit route outside that list fails with a message listing the available ones. This is the same one-key opt-in the shipped `standard`/`ptc`/`cordis` presets carry; `chat-subagent` keeps its flag off (the shared discovery tool would break its one-tool invariant, `presets/chat-subagent.patch.yml:49-50`) and `chat-agent` mounts no tool row at all. `subagent_fork` and the disabled `codex`/`claude-code` rows stay off, as upstream.
+- **The opt-in is a Host dependency, not a self-contained capability.** Its provider is the profile's `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row (mounted by the shipped `dsh-base` + `dsh-web-app` stack); without it the opting-in preset fails to mount **as a whole** — one failed row marks the preset broken. An absent setting row is not the same as a disabled setting: with the switch off the policy is simply undefined and the child inherits, so the fallback never errors. Both READMEs now name the dependency and its symptom in their Requirements sections, next to a new "Subagent Model Selection" subsection.
+- **`check-subagent-model-selection.mjs` (new, repository root) pins it: `node check-subagent-model-selection.mjs`.** It asserts that the five spawn rows carry the flag exactly once each, that no `tool-subagent-fork` row does, that `chat-subagent`'s config key stays absent while `chat-agent` mounts no delegation row, and that both READMEs keep naming the Host plugin the opt-in depends on. Not listed in `files`, so it does not ship.
+
 ## [1.7.0] - 2026-10-15
 
 ### Added (a seventh preset: a chat session whose one tool delegates)
