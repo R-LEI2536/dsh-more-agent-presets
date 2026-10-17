@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.7.3] - 2026-10-17
+
+### Changed (`chat-subagent` can name the child's model too)
+
+- **The preset's delegation row now carries `modelSelectionSettings: true`, so a chat session gets the optional `provider`/`model`/`reasoning_effort` parameters and the read-only `list_subagent_models`.** Its founding invariant reads "exactly one tool that ACTS" from here on: the catalog holds two entries, one acting and one read-only. Before this, the session answered "`subagent` only accepts `description` and `prompt`" — the flag was off, and leaving the discovery tool out was the only way to keep the catalog at one entry.
+- **The flag cannot simply be turned on: it RELOCATES the tool.** With the opt-in, `@deepseek-ai/dsh-tool-subagent` installs `subagent` (and the lister) in each Agent's OWN layer, not on the preset's standing plane. `restrict()` validates only names a scope can INHERIT (`packages/core/tools/src/index.ts:1194-1201`) and own-layer registrations sit outside every restriction (`:1202-1208`), so `restrict({ allow: ['subagent'] })` would have thrown `names unknown global tool "subagent"`, the probe would have dropped the name, and the whole inherited surface would have stayed in the catalog. This is the coupling that kept the flag off, and the previous release reverted an attempt to route around it.
+- **`presets/chat-subagent/delegator.mjs` now decides the top-level mask from the registry at runtime.** A silent probe asks whether the delegation tool is inherited. It is not on the opt-in path, so the mask seals the inherited surface with `restrict({ allow: [] })` (the `chat-agent` one-liner, own-layer registrations survive it by design) and the guard — which allows `subagent` and `list_subagent_models` — refuses every other call. On a `dsh-tool-subagent` older than the opt-in the tool IS inherited, so the mask keeps the named allow-list and warns once that this build cannot name a model: the preset keeps working instead of ending up with no tool at all. A delegated child's guard allows the lister too, so its catalog never lists a tool that would always refuse.
+- **Docs, the shipped delegation note and the checks follow.** `delegation-note.md` — half of the top-level session's whole prompt — describes the two tools and the optional route. `check-subagent-model-selection.mjs` asserts the opt-in on `chat-subagent` instead of its absence. `check-delegator.mjs` covers both registration paths, the `allow: []` seal, `installInheritedSeal()`, and the lister in both guards.
+
 ## [1.7.2] - 2026-10-17
 
 ### Fixed (a session that LEFT `chat-subagent` kept its mask)

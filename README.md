@@ -59,9 +59,9 @@ A pure-conversation assistant: it mounts no tool row, masks every **inherited** 
 
 ### General Chat Mode with Delegation (`chat-subagent`)
 
-A chat assistant whose whole capability is **one tool**: `subagent`. Nothing in the declaration masks the top-level session — a per-agent mask (`presets/chat-subagent/delegator.mjs`) installs itself at `agent/created` and again from `tools/change` reconciliation, registering `ctx.tools.restrict({ allow: ['subagent'] })` **on the agent's own scope** plus the same `ctx.tools.guard(...)` refusal `chat-agent` uses — and the same reconciliation lifts both again once the agent stops composing this preset, because an agent-scope registration outlives the composition that asked for it. The session therefore lists exactly one tool and cannot act directly; it calls `subagent` once and answers the user from the report. (The one boundary that survives is the own-plane Team-tool residual noted below.) The single call is foreground (`enableRunInBackground: false` removes the background parameter from the schema entirely) on the `spawn` provider, with `maxDepth: 1` stating the recursion budget.
+A chat assistant whose whole capability is **one tool that acts**: `subagent` — plus the read-only `list_subagent_models` the model-selection opt-in registers, which only reports the routes the session may name. Nothing in the declaration masks the top-level session — a per-agent mask (`presets/chat-subagent/delegator.mjs`) installs itself at `agent/created` and again from `tools/change` reconciliation, registering a tool restriction **on the agent's own scope** plus the same `ctx.tools.guard(...)` refusal `chat-agent` uses — and the same reconciliation lifts both again once the agent stops composing this preset, because an agent-scope registration outlives the composition that asked for it. Which restriction that is gets decided from the registry at runtime: with the opt-in on, both names live in the agent's own layer, where `restrict()` cannot name them, so the mask seals the inherited surface with `restrict({ allow: [] })`; on a `dsh-tool-subagent` older than the opt-in the delegation tool is still inherited and the mask keeps the named allow-list. The session therefore lists at most two entries — one acting, one read-only — and cannot act directly; it calls `subagent` once and answers the user from the report. (The one boundary that survives is the own-plane Team-tool residual noted below.) The single call is foreground (`enableRunInBackground: false` removes the background parameter from the schema entirely) on the `spawn` provider, with `maxDepth: 1` stating the recursion budget.
 
-**The delegated subagent is what actually works, and it works read-only.** The mask cannot be a preset-plane restriction, and that is the whole point of the plugin: a delegated child **joins its parent's preset**, so a standing mask would leave the child with one tool too and the delegation would accomplish nothing; a restriction can only narrow, so the child's own `toolFilter` could not undo it. The agent-scope mask is what keeps the child unmasked, and the child is then bounded by the declaration's `subagentTools` list — by default `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `job_list`. There is no `bash`, `write`, or `edit`: the subagent investigates and reports, and cannot run commands, run tests, or change files (`TODO.md` tracks the writable follow-up). Two of those names are deployment-dependent — `read_image` exists only while an attachment store is mounted, and `list_directory` comes from a third-party profile plugin — so the plugin probes every name and drops the ones this deployment does not have, with one warning per name, instead of failing every delegation.
+**The delegated subagent is what actually works, and it works read-only.** The mask cannot be a preset-plane restriction, and that is the whole point of the plugin: a delegated child **joins its parent's preset**, so a standing mask would mask the child too — an `allow: []` seal takes every tool away from it — and the delegation would accomplish nothing; a restriction can only narrow, so the child's own `toolFilter` could not undo it. The agent-scope mask is what keeps the child unmasked, and the child is then bounded by the declaration's `subagentTools` list — by default `read`, `glob`, `grep`, `read_image`, `list_directory`, `todo_write`, `job_list`. There is no `bash`, `write`, or `edit`: the subagent investigates and reports, and cannot run commands, run tests, or change files (`TODO.md` tracks the writable follow-up). Two of those names are deployment-dependent — `read_image` exists only while an attachment store is mounted, and `list_directory` comes from a third-party profile plugin — so the plugin probes every name and drops the ones this deployment does not have, with one warning per name, instead of failing every delegation.
 
 **The system prompt switches with the current model.** It is the shared table (`presets/shared/model-personas.json`, read through `presets/shared/model-persona.mjs`, which `chat-agent` mounts as its own prompt) plus a delegation note (`presets/chat-subagent/delegation-note.md`, read verbatim when the row mounts), and together they are the session's **entire** prompt. Automatic (pressure / overflow) compaction, the human `/compact` command, and tool-result pruning stay on: the child greps repositories, so its tool results need pruning even though the top-level session produces none.
 
@@ -75,7 +75,7 @@ A chat assistant whose whole capability is **one tool**: `subagent`. Nothing in 
     id: chat-subagent
     order: 16
     name: "通用聊天模式 · 可派活"
-    description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
+    description: "顶层只调用 subagent 干活（可为子 agent 指定模型）：把任务交给只读子 agent 去查、去读，自己专注对话。"
     plugins:
       - id: delegator
         name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'
@@ -91,7 +91,7 @@ One boundary is inherited from `chat-agent` and stays: a profile that mounts the
 
 ### Subagent Model Selection (`qwencode` / `iflow` / `iflow-cre` / `pair` / `codex`)
 
-The five coding presets opt into the Host's subagent model-selection setting with `modelSelectionSettings: true` on their delegation row — the same one-key opt-in the shipped `standard`/`ptc`/`cordis` presets carry. The top-level Agent then gets two things:
+The five coding presets and `chat-subagent` opt into the Host's subagent model-selection setting with `modelSelectionSettings: true` on their delegation row — the same one-key opt-in the shipped `standard`/`ptc`/`cordis` presets carry. The top-level Agent then gets two things:
 
 - **`list_subagent_models`** reports the routes this session may use. No arguments list the authorized providers, `provider` lists that provider's advertised models, and `provider` + `model` adds that model's reasoning efforts.
 - **`subagent`** gains the optional `provider`, `model`, and `reasoning_effort` parameters. Omit all three and the child still inherits the parent session's model — the official default, and exactly what these presets did before the opt-in.
@@ -100,7 +100,7 @@ The authorized list is the Host's `@deepseek-ai/dsh-tool-subagent/model-selectio
 
 That row must exist in the profile. The shipped `dsh-base` + `dsh-web-app` stack mounts it by default, and so do the profiles in this repository; without it a preset that opts in fails to mount **as a whole**, with `tool-subagent: \`modelSelectionSettings\` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope`.
 
-`chat-subagent` deliberately leaves the flag off: it would register the shared `list_subagent_models` tool and break that preset's one-tool invariant (see above). `chat-agent` mounts no tool row at all, so it has nothing to opt in.
+`chat-subagent` opts in too, so a chat session can name the child's model like the coding presets do. The price is its tool catalog: two entries instead of one, `subagent` acting and `list_subagent_models` read-only, which is why its invariant reads "exactly one tool that ACTS". The flag also moves the delegation tool from the preset's standing plane into each agent's own layer, where `restrict()` cannot name it — see the preset section above for what the mask does instead. `chat-agent` mounts no tool row at all, so it has nothing to opt in.
 
 **Which model a child actually ran on is a terminal line.** Every delegation prints one, from `presets/shared/subagent-route-log.mjs` — mounted by these five presets — or from `chat-subagent`'s own `delegator`:
 
@@ -136,7 +136,7 @@ This is a limitation of how the harness consumes preset metadata, not of this pl
 ## Requirements
 
 - DeepSeek Harness **0.2.0-rc.1 or newer**. This release is a declarative preset bundle (the pre-0.1.7 `.agent-presets` directory installer no longer exists). A host on 0.1.7-rc.x skips the whole bundle through the peer compatibility gate, so update the host first.
-- The subagent model-selection opt-in needs the Host's `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row. The shipped `dsh-base` + `dsh-web-app` stack mounts it by default. Without it, a preset that opts in fails to mount as a whole.
+- The subagent model-selection opt-in needs the Host's `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row. The shipped `dsh-base` + `dsh-web-app` stack mounts it by default. Without it, a preset that opts in — the five coding presets and `chat-subagent` — fails to mount as a whole.
 
 ## Install
 

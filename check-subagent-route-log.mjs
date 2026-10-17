@@ -5,7 +5,7 @@
  *
  * The terminal used to say nothing about which model a delegated child ran on:
  * a child's route is either named by the delegation call (`provider`/`model`
- * from the Host's authorized list, the opt-in the five coding presets carry) or
+ * from the Host's authorized list, the opt-in the coding presets carry) or
  * inherited from the parent session, and no other component reports it. The five
  * coding presets mount this row; `chat-subagent` does not, because its
  * `delegator` prints the same line while it masks the child.

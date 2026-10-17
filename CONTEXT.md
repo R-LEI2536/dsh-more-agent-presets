@@ -35,15 +35,15 @@ agent 创建时的 profile 默认值。表与插件位于 `presets/shared/`（`m
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
-preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。
+preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。restriction 只管**继承**面：agent **自身层**注册的工具不受任何 restriction 约束（`view()` 跳过 own 层，再把它无条件叠加进可见集），own 层只能由 guard 在调用时拦。
 _Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，只过滤子 agent 的工具）
 
 **Delegator preset**:
-顶层会话只被允许调用一个工具（`subagent`）的 preset。它的“只有一个工具”由 per-agent mask 实现，而不是由 `config.plugins` 里缺少工具行实现——被派出去的子 agent 仍需真实工具，而它继承的是同一个 preset。
+顶层会话只被允许调用**一个能动手的工具**（`subagent`）的 preset；开了 **Subagent model selection** 之后目录里另有只读的 `list_subagent_models`，所以不变量读作「只有一个**能动手**的工具」。这条不变量由 per-agent mask 实现，而不是由 `config.plugins` 里缺少工具行实现——被派出去的子 agent 仍需真实工具，而它继承的是同一个 preset。
 _Avoid_: one-tool preset（易与 zero-tool preset 混淆）、subagent preset
 
 **Agent-scope mask**:
-注册在**每个 agent 自身 scope** 上的 `ctx.tools.restrict(...)` 与 `ctx.tools.guard(...)` 组合。preset 层（standing scope）的 restriction 会连带封住 delegated child，因为子 agent 的 scope 父级就是该 standing scope；所以“只对顶层生效”的屏蔽必须在 agent 创建后逐个安装，并按 delegation depth 分流。**agent 自身的注册比组合活得久**：preset 切换只重排 scope 父链，不会撤销它，所以 mask 必须由 `tools/change` reconcile **双向**维护（装与拆），并在行被卸载、agent 被销毁时显式解除。
+注册在**每个 agent 自身 scope** 上的 `ctx.tools.restrict(...)` 与 `ctx.tools.guard(...)` 组合。preset 层（standing scope）的 restriction 会连带封住 delegated child，因为子 agent 的 scope 父级就是该 standing scope；所以“只对顶层生效”的屏蔽必须在 agent 创建后逐个安装，并按 delegation depth 分流。**agent 自身的注册比组合活得久**：preset 切换只重排 scope 父链，不会撤销它，所以 mask 必须由 `tools/change` reconcile **双向**维护（装与拆），并在行被卸载、agent 被销毁时显式解除。装**哪一条** restriction 由运行时探针决定（`restrict()` 只认可继承的名字）：目标名字落在 own 层时只能装 `allow: []` 封住继承面，名字仍在 standing 平面时才用命名白名单——`chat-subagent` 的 `delegator` 两条路都实现了。
 _Avoid_: preset 层 restriction（那是 zero-tool preset 的做法）、`toolFilter`
 
 **Subagent tool list**:
@@ -58,8 +58,10 @@ _Avoid_: worker（内部叫法，不是产品术语）
 委派行 `@deepseek-ai/dsh-tool-subagent` 的 `modelSelectionSettings` opt-in（默认 `false`）。开启后顶层 Agent 用
 `list_subagent_models` 查 Host 授权名单，并在派活时点名 `provider`/`model`/`reasoning_effort`；三个都省略就继承父会话模型。
 名单由 Host 的设置行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；缺这一行会让开了 opt-in 的 preset
-整块挂载失败，而开关只是关着时行为退回继承、不报错。本 bundle 的 5 个编程 preset 开启；`chat-subagent` 关闭，因为它会多出
-`list_subagent_models`，破坏 **Delegator preset** 的「顶层只有一个工具」。
+整块挂载失败，而开关只是关着时行为退回继承、不报错。开启后工具从 preset 平面挪进**每个 agent 自身层**，`restrict()` 由此
+再也点不到它——`chat-subagent` 的 mask 据此在运行时二选一（见 **Agent-scope mask**）。本 bundle 的 5 个编程 preset 与
+`chat-subagent` 都开启；后者因此多一个只读的 `list_subagent_models`，**Delegator preset** 的不变量随之读作「只有一个能
+动手的工具」。
 落脚点由终端那一行报出：`<presetId>/subagent-route-log: subagent <id> route <provider>/<model>`（5 个编程 preset 挂
 `presets/shared/subagent-route-log.mjs`；`chat-subagent` 由自己的 `delegator` 打同一行）。
 _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
@@ -69,7 +71,7 @@ _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的�
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。
 - “minimal” 容易被读成「零工具」：`minimal` 是随 DSH 发布的 preset、挂了持久 shell；本仓库里零工具的是 `chat-agent`。
 - “model-persona” 不是 persona 行的别名：前者是按模型切换文案的插件行（`model-persona.mjs`），后者是 `@deepseek-ai/dsh-persona` 的静态 `prefix` 行（chat-agent 已不用后者）。
-- “只有一个工具”说的永远是**顶层会话**的工具目录（`chat-subagent`）；delegated child 看到的是 **Subagent tool list** 与它实际注册量的交集，两者不是同一个面。
+- “只有一个工具”说的永远是**顶层会话**的**能动手**工具目录（`chat-subagent`；开了模型选择开关后另有只读的 `list_subagent_models`）；delegated child 看到的是 **Subagent tool list** 与它实际注册量的交集，两者不是同一个面。
 
 ## Example dialogue
 
@@ -82,7 +84,7 @@ _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的�
 > 运行时直接读它，patch 里没有副本；`model-personas.md` 只讲怎么选行。注意它会**同时**改到
 > `chat-subagent`，因为两个聊天 preset 共用这份表。
 > **Dev:** 那“可派活”的 `chat-subagent` 也算 zero-tool preset 吗？
-> **Maintainer:** 不算，它是 **Delegator preset**：顶层会话只有一个工具，靠 **Agent-scope mask**
+> **Maintainer:** 不算，它是 **Delegator preset**：顶层会话只有一个能动手的工具（另有只读的 `list_subagent_models`），靠 **Agent-scope mask**
 > 装在每个 agent 自己的 scope 上；preset 层那套 restriction 会把 delegated child 一起封住，
 > 派活就没有意义了。子 agent 能用什么，看 **Subagent tool list**。
 > **Dev:** 那给子 agent 加 `bash` 是改名单就行吗？
