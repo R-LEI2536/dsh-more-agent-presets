@@ -1,21 +1,24 @@
 /**
- * Runnable check for `presets/chat-agent/model-persona.mjs`.
+ * Runnable check for `presets/shared/model-persona.mjs`.
  *
  *   node check-model-persona.mjs
  *
  * The one fact that broke in 1.6.1: the persona must follow the model the
  * SESSION selected, not the profile default the agent was created with. The
  * table is loaded through the plugin's own `personaTable()`, so a missing or
- * malformed `presets/chat-agent/model-personas.json` — the single shipped copy
+ * malformed `presets/shared/model-personas.json` — the single shipped copy
  * of the table — fails here too, as does a `file` row whose reference escapes
  * the plugin directory. It also pins the two Gemini bodies: each model id
  * matches its own file-backed row, and neither body may carry an XML tag, tool
- * name or component name — the vocabulary the adaptation deleted. Not in
- * `files`, so it never ships.
+ * name or component name — the vocabulary the adaptation deleted. And it pins
+ * the move to `presets/shared/`: the declaration's row `name` exists on disk,
+ * and the pre-1.7.0 specifier (`presets/chat-agent/model-persona.mjs`) is a
+ * re-export of this same module instance. Not in `files`, so it never ships.
  */
 
 import assert from 'node:assert/strict'
-import { pickPersona, personaTable, refText, resolveRefs, sessionModel } from './presets/chat-agent/model-persona.mjs'
+import { existsSync, readFileSync } from 'node:fs'
+import { pickPersona, personaTable, refText, resolveRefs, sessionModel } from './presets/shared/model-persona.mjs'
 
 const table = personaTable()
 /** A context whose `sessionProjections` service serves one `modelSelection` state. */
@@ -62,6 +65,24 @@ assert.equal(pickPersona('fake-model', resolved), resolved.personas[0].text)
 assert.throws(() => refText('../package.json'))
 assert.throws(() => refText('/etc/hostname'))
 assert.throws(() => refText(''))
+// The escape guard must reject an OUTSIDE path that exists, not merely a missing
+// one: `presets/chat-agent/no-tools.mjs` is real and still outside this dir.
+assert.throws(() => refText('../chat-agent/no-tools.mjs'))
+
+// The pre-1.7.0 specifier still resolves, to the SAME module instance — a profile
+// override that restated `presets/chat-agent/model-persona.mjs` keeps working, and
+// there is still one cached table rather than a second read.
+const shim = await import('./presets/chat-agent/model-persona.mjs')
+assert.equal(shim.personaTable, personaTable)
+assert.equal(shim.pickPersona, pickPersona)
+assert.equal(shim.sessionModel, sessionModel)
+
+// The asset the shipped declaration names must exist: after the move to
+// `presets/shared/`, a stale row `name` would fail at mount, which is what this pins.
+const chatAgentPatch = readFileSync(new URL('./presets/chat-agent.patch.yml', import.meta.url), 'utf8')
+const personaRowName = /- id: model-persona\s+name: '([^']+)'/.exec(chatAgentPatch)?.[1]
+assert.equal(personaRowName, 'dsh-more-agent-presets/presets/shared/model-persona.mjs')
+assert.ok(existsSync(new URL(`./${personaRowName.replace('dsh-more-agent-presets/', '')}`, import.meta.url)))
 
 // The two Gemini bodies: each is one capture's adaptation, matched by its own model id (the
 // provider prefix is stripped before matching, so `daseinai.gemini-3.8-flash` hits the same row

@@ -49,11 +49,12 @@
 # `modelSelectionSettings` is deliberately off — it would register the shared
 # `list_subagent_models` tool and break "exactly one tool".
 #
-# The persona text is NOT here: `delegator.mjs` composes it from the table
-# `chat-agent` owns (`presets/chat-agent/model-personas.json`, read by
-# `presets/chat-agent/model-persona.mjs`) plus the delegation note in the plugin.
-# One table, one copy. `persona` below is the WORKER's persona — the child's own
-# section, shadowing the deployment persona for that child alone.
+# The top-level persona text is NOT here: `delegator.mjs` composes it from the
+# shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
+# `presets/shared/model-persona.mjs`) plus the delegation note it reads from
+# `presets/chat-subagent/delegation-note.md`. One table, one note, each in one
+# file. `persona` below is the CHILD's own persona — a section in the child's
+# scope alone, shadowing the deployment persona there.
 #
 # A pure `insert` with no `!!js` expression: nothing here is platform- or
 # environment-conditional.
@@ -70,6 +71,9 @@
           # declaration's `id` (it is what tells the plugin which live agents
           # belong to this preset during `tools/change` reconciliation);
           # `subagentTools` is the single source of the child's read-only list.
+          # An optional `delegationNote` here would REPLACE the shipped
+          # `delegation-note.md` for this preset; the shipped declaration sets
+          # neither, so the file is what the session's prompt ends with.
           - id: delegator
             name: 'dsh-more-agent-presets/presets/chat-subagent/delegator.mjs'
             config:
@@ -107,6 +111,12 @@
               sampleOverCapGlobResults: false
           - id: tool-todo
             name: '@deepseek-ai/dsh-tool-todo'
+            # The one key this plugin has no default for (`allowParallelInProgress`
+            # is `.required()` in its Config), so a row without it fails to mount
+            # and the WHOLE preset reports a load failure. The shipped standard
+            # preset passes `true`; this row mirrors that.
+            config:
+              allowParallelInProgress: true
           - id: tool-jobs
             name: '@deepseek-ai/dsh-tool-jobs'
 

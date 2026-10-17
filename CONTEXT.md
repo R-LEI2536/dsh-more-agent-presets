@@ -27,8 +27,11 @@ _Avoid_: minimal preset（那是随 DSH 发布的 `minimal`，它保留了持久
 **Model persona**:
 按模型 id 切换 persona 文本的声明；`chat-agent` 用它实现「所选文案即全部系统提示词」。模型 id 取**会话选定**
 的那一个（`modelSelection` 投影的 `pending ?? lastUsed`，无投影时回落 `agent.options.model`），不取
-agent 创建时的 profile 默认值。唯一真源是 `presets/chat-agent/model-personas.json`，插件运行时
-直接读取；patch 的 `model-persona` 行不带 `config`，没有副本可同步。
+agent 创建时的 profile 默认值。表与插件位于 `presets/shared/`（`model-personas.json` +
+`model-persona.mjs`），因为**两个聊天 preset 共用**：`chat-agent` 把它当作全部提示词，`chat-subagent`
+导入它、再追加自己的派活说明（`presets/chat-subagent/delegation-note.md`，可由 `delegator` 行的
+`delegationNote` 覆盖）。patch 的 `model-persona` 行不带 `config`，没有副本可同步；
+`presets/chat-agent/model-persona.mjs` 只是兼容 re-export（≤1.6.2 发布过那个路径），指向同一模块实例。
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
@@ -51,6 +54,14 @@ _Avoid_: 工具池、`toolFilter`
 被 `subagent` 工具创建、执行任务的子 agent：它带着自己的 delegation depth 加入父会话的同一个 preset，因此既继承 preset 的工具行，又不受父会话那份 agent-scope mask 的影响。
 _Avoid_: worker（内部叫法，不是产品术语）
 
+**Subagent model selection**:
+委派行 `@deepseek-ai/dsh-tool-subagent` 的 `modelSelectionSettings` opt-in（默认 `false`）。开启后顶层 Agent 用
+`list_subagent_models` 查 Host 授权名单，并在派活时点名 `provider`/`model`/`reasoning_effort`；三个都省略就继承父会话模型。
+名单由 Host 的设置行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；缺这一行会让开了 opt-in 的 preset
+整块挂载失败，而开关只是关着时行为退回继承、不报错。本 bundle 的 5 个编程 preset 开启；`chat-subagent` 关闭，因为它会多出
+`list_subagent_models`，破坏 **Delegator preset** 的「顶层只有一个工具」。
+_Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
+
 ## Flagged ambiguities
 
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。
@@ -65,8 +76,9 @@ _Avoid_: worker（内部叫法，不是产品术语）
 > **Dev:** 那 `chat-agent` 的 preset id 是 `preset-chat-agent` 吧？
 > **Maintainer:** preset id 是 `chat-agent`；`preset-chat-agent` 只是 patch 层里的行 id，用来定位这一行 patch。
 > **Dev:** chat-agent 的 persona 文案要改，改哪里？
-> **Maintainer:** 改 `presets/chat-agent/model-personas.json` 一处即可——插件运行时直接读它，
-> patch 里没有副本；`model-personas.md` 只讲怎么选行。
+> **Maintainer:** 改 `presets/shared/model-personas.json` 一处即可——插件（`presets/shared/model-persona.mjs`）
+> 运行时直接读它，patch 里没有副本；`model-personas.md` 只讲怎么选行。注意它会**同时**改到
+> `chat-subagent`，因为两个聊天 preset 共用这份表。
 > **Dev:** 那“可派活”的 `chat-subagent` 也算 zero-tool preset 吗？
 > **Maintainer:** 不算，它是 **Delegator preset**：顶层会话只有一个工具，靠 **Agent-scope mask**
 > 装在每个 agent 自己的 scope 上；preset 层那套 restriction 会把 delegated child 一起封住，

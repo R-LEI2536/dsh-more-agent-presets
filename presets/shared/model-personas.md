@@ -1,20 +1,23 @@
 # 模型 → 系统提示词表 · 语义
 
-> **状态：已接入 chat-agent。** 文案的唯一真源是 `presets/chat-agent/model-personas.json`：
-> 插件 `model-persona.mjs` 在 apply 时自己读它，patch 的 `model-persona` 行**不带 `config`**，
-> 因此不存在第二份副本，也没有「两处同步」这回事。本文档只说明**怎么选行**。
+> **状态：已接入 `chat-agent` 与 `chat-subagent`。** 文案的唯一真源是
+> `presets/shared/model-personas.json`：插件 `presets/shared/model-persona.mjs` 在 apply 时自己读它，
+> patch 的 `model-persona` 行**不带 `config`**，因此不存在第二份副本，也没有「两处同步」这回事。
+> 本文档只说明**怎么选行**。
 
-用途：需要「按模型名切换系统提示词」的 preset。第一个消费者是 `chat-agent` —— 它的
-persona 行开了 `complete: true`，被选中的文本就是该会话的**全部**系统提示词。
+用途：需要「按模型名切换系统提示词」的 preset。两个消费者共用这一份表：`chat-agent` 把它当作
+该会话的**全部**系统提示词（`complete: true`），`chat-subagent` 在它后面追加一段派活说明
+（`presets/chat-subagent/delegation-note.md`）。
+`presets/chat-agent/model-persona.mjs` 只是兼容 re-export（≤1.6.2 发布过那个路径），没有第二份实现。
 
-改文案：只改 `presets/chat-agent/model-personas.json`（键为 `default` 与各
+改文案：只改 `presets/shared/model-personas.json`（键为 `default` 与各
 `personas[].model` / `personas[].text`）；改完需重启或重挂 preset —— bundle 的激活本就是
 restart-time。缺文件或 JSON 解析失败会让该行 mount 失败、preset 组合报错，不会静默发空提示词。
 
 ## 长文案：`file` 引用
 
 一个模型的提示词太长（多段落）时，别把它塞进 JSON 的一行字符串：正文写成
-`presets/chat-agent/ref/<名字>.md`，表里用 `file` 指向它，插件在 apply 时读取并去掉首尾空白：
+`presets/shared/ref/<名字>.md`，表里用 `file` 指向它，插件在 apply 时读取并去掉首尾空白：
 
 ```json
 { "model": ["gemini"], "file": "ref/gemini.md" }
@@ -33,7 +36,7 @@ Markdown 规则）分别作用在各自的捕获上。两者之间没有「公�
 独有的段落（如 `gemini-3.7-flash` 的 `RULE 1/2/3`），以及两份共同出现的段落；改动后者时记得
 都看一眼，`check-model-persona.mjs` 会扫出 XML 标签、工具名与组件词的残留。
 
-未改编的原始捕获与改编稿并列放在 `presets/chat-agent/ref/`（`gemini-3.7-flash.raw.md`，随
+未改编的原始捕获与改编稿并列放在 `presets/shared/ref/`（`gemini-3.7-flash.raw.md`，随
 `files: ["presets"]` 一起发布，供将来重编时比对）。3.8 的原始捕获在首次改编时被就地覆盖，没有
 留档。
 

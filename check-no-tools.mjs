@@ -12,7 +12,13 @@
 import assert from 'node:assert/strict'
 import { apply } from './presets/chat-agent/no-tools.mjs'
 
-/** A context whose tools service records what the plugin registers. */
+/**
+ * A context whose tools service records what the plugin registers.
+ *
+ * `logger` is a property, as it is in cordis — a fake that answered
+ * `get('logger')` would let the degradation warning below pass while printing
+ * nothing in a real session.
+ */
 function fakeCtx({ withGuard = true } = {}) {
   const seen = { restrictions: [], guards: [], warnings: [] }
   const tools = { restrict: filter => { seen.restrictions.push(filter) } }
@@ -21,7 +27,7 @@ function fakeCtx({ withGuard = true } = {}) {
     seen,
     ctx: {
       tools,
-      get: name => name === 'logger' ? { warn: message => { seen.warnings.push(message) } } : undefined,
+      logger: { warn: message => { seen.warnings.push(message) } },
     },
   }
 }
