@@ -287,6 +287,25 @@ export function apply(ctx, config) {
       : subagentAllowed.has(called) ? undefined : SUBAGENT_DENIAL
   }, warn)
 
+  // TEMPORARY diagnostic for the live `dev_web` double install (TODO.md): a new
+  // chat-subagent session prints `[E] scope Error: tool "list_subagent_models" is
+  // already registered in this scope` and ends up with no `subagent` at all.
+  // This plugin registers no tool and no restriction (point 5), so the next
+  // question is what the official per-Agent resolver sees: how many Agents one
+  // session announces and which preset each resolves to. One line per event,
+  // removed with the fix.
+  const described = (agent) => {
+    const presets = ctx.get('agentPresets')
+    const composed = presets === undefined ? 'unknown' : String(presets.composedPreset(agent.ctx))
+    return `id=${String(agent?.id)} depth=${depthOf(agent)} preset=${composed}`
+  }
+  ctx.on('agent/created', ({ agent }) => info(`agent/created ${described(agent)}`))
+  ctx.on('tools/change', () => {
+    const agents = ctx.get('agents')
+    if (agents === undefined) return
+    info(`tools/change agents=[${agents.list().map(agent => described(agent)).join(' | ')}]`)
+  })
+
   /** Agents whose persona this plugin already installed. */
   const dressed = new WeakSet()
   /** agent → the disposers that undo the persona this plugin installed on it. */
