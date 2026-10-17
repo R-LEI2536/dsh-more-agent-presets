@@ -45,19 +45,7 @@ const ORDERS = { DEPLOYMENT_PERSONA_PREFIX: 100 }
  */
 function fakeTools({ known = MOUNTED, noGuard = false } = {}) {
   const seen = { restrictions: [], guards: [], calls: 0 }
-  // `get()` mirrors the registry's own visibility read (`tools.get(name,
-  // agent)`, `core/tools/src/index.ts:1230-1232`): a name the deployment does
-  // not register reads as absent, and an active allow-list hides a name it
-  // does not admit. The viewing agent is ignored by this fake — a one-scope
-  // registry is enough for every flow under test.
-  const get = (name) => {
-    if (!known.includes(name)) return undefined
-    const allows = seen.restrictions.filter(restriction => restriction.allow !== undefined)
-    if (allows.length > 0 && !allows.every(restriction => restriction.allow.includes(name))) return undefined
-    return { name }
-  }
   const tools = {
-    get,
     restrict(filter) {
       seen.calls++
       const names = [...(filter.allow ?? []), ...(filter.deny ?? [])]
@@ -186,17 +174,18 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   const agent = fakeAgent({ id: 'top' })
   host.fire('agent/created', { agent })
 
-  // A NAMED allow-list — the router registers `subagent` on the preset's
-  // standing layer, so it is an inherited name `restrict()` accepts and the
-  // list is what hides every other inherited row.
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: ['subagent'] }])
-  // The presence probe is `get()`, read-only: exactly one `restrict()` call.
+  // An EMPTY allow-list, not a named one: `modelSelectionSettings: true` puts
+  // both top-level tools in the agent's own scope, and `restrict()` refuses a
+  // scope-local name — a named list would throw, be dropped, and leave the mask
+  // uninstalled. The empty list hides the inherited plane and nothing else.
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
+  // No probe: an empty list has no name to validate against the registry.
   assert.equal(agent.scope.seen.calls, 1)
 
   assert.equal(agent.scope.seen.guards.length, 1)
   const guard = agent.scope.seen.guards[0]
-  // Every name the preset declares callable is callable — the one delegation
-  // tool, whichever implementation the router mounted.
+  // Every name the preset declares callable is callable — `subagent`, and the
+  // route companion `modelSelectionSettings` mounts beside it — and no other.
   for (const name of DELEGATOR_TOOLS) assert.equal(guard({ name }), undefined)
   // PTC mode's model-direct transport must stay callable; the restriction still
   // bounds what the nested dispatch can bind.
@@ -244,15 +233,14 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   host.fire('agent/created', { agent: worker })
 
   assert.deepEqual(worker.scope.seen.restrictions, [{ allow: [...SUBAGENT_TOOLS] }])
-  // The presence probe is `get()`, read-only: exactly one `restrict()` call.
-  assert.equal(worker.scope.seen.calls, 1)
+  // Seven probes plus the installed restriction.
+  assert.equal(worker.scope.seen.calls, SUBAGENT_TOOLS.length + 1)
   const guard = worker.scope.seen.guards[0]
   assert.equal(guard({ name: 'read' }), undefined)
   assert.equal(guard({ name: RUN_CODE }), undefined)
-  // The child inherits the delegation tool from the standing plane (its mask
-  // hides it and its guard refuses it): it selects no model and delegates no
-  // further.
-  for (const name of ['write', 'edit', 'bash', 'subagent', 'spawn_teammate']) {
+  // Both of the top-level tools are own-layer ghosts in the child: it selects no
+  // model and delegates no further, so its guard refuses them.
+  for (const name of ['write', 'edit', 'bash', 'subagent', 'list_subagent_models', 'spawn_teammate']) {
     assert.equal(typeof guard({ name }), 'string')
   }
   // The child must NOT get chat-agent's complete persona or its suppression:
@@ -321,7 +309,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   apply(host.ctx, CONFIG)
   const agent = fakeAgent({ id: 'top-no-guard', scope: fakeScope({ noGuard: true }) })
   host.fire('agent/created', { agent })
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: ['subagent'] }])
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
   assert.ok(host.warnings.some(m => m.includes('no tools.guard()')))
 }
 
@@ -346,7 +334,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   bound = true
   host.fire('tools/change', {})
 
-  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: ['subagent'] }])
+  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(ours.scope.seen.guards.length, 1)
   assert.equal(ours.scope.systemPrompt.sections.length, 1)
   // Another preset's agent is untouched.
@@ -355,7 +343,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.deepEqual(foreign.scope.systemPrompt.sections, [])
   // Idempotent: a later change must not stack a second mask.
   host.fire('tools/change', {})
-  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: ['subagent'] }])
+  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(ours.scope.seen.guards.length, 1)
   assert.equal(ours.scope.systemPrompt.sections.length, 1)
   // Recomposed twice, the route line did not fire: `ours` is a top-level
@@ -368,13 +356,9 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
 {
   const scope = fakeScope({ known: ['read', 'write'] })
   const warnings = []
-  const dispose = installRestriction(scope.tools, {}, ['read', 'gone', 'write'], m => warnings.push(m))
+  assert.deepEqual(installRestriction(scope.tools, ['read', 'gone', 'write'], m => warnings.push(m)), ['read', 'write'])
   assert.deepEqual(scope.seen.restrictions, [{ allow: ['read', 'write'] }])
   assert.equal(warnings.length, 1)
-  assert.equal(typeof dispose, 'function')
-  // The disposer lifts exactly the one restriction the call installed.
-  dispose()
-  assert.deepEqual(scope.seen.restrictions, [])
   installGuard(scope.tools, new Set(['read']), 'no', m => warnings.push(m))
   assert.equal(scope.seen.guards[0]({ name: 'write' }), 'no')
   assert.equal(scope.seen.guards[0]({ name: 'read' }), undefined)
@@ -391,24 +375,14 @@ assert.equal(declaredId, 'chat-subagent')
 assert.equal(configuredId, declaredId)
 const toolsBlock = /^\s+subagentTools:\n((?:\s+- \S+\n)+)/m.exec(patch)?.[1] ?? ''
 assert.deepEqual([...toolsBlock.matchAll(/^\s+- (\S+)$/gm)].map(match => match[1]), SUBAGENT_TOOLS)
-// The delegation row is the runtime router: the patch must not carry tool
-// config of its own (both branches share the shape the router declares), and
-// the official per-agent model-selection flag must not return anywhere — it
-// was the crash this preset worked around, and the named mask above requires
-// a standing-plane tool.
-const router = readFileSync(new URL('./presets/chat-subagent/delegation-router.mjs', import.meta.url), 'utf8')
-assert.ok(patch.includes('delegation-router.mjs'))
-assert.ok(!/^\s*modelSelectionSettings:/m.test(patch))
-assert.ok(!router.includes('modelSelectionSettings'))
-// Both branches declare the shared delegation-tool shape in the router: the
-// standing-plane registration under the model-facing name `subagent`.
-for (const source of [
-  [router, /toolName: 'subagent'/, /enableRunInBackground: false/, /maxDepth: 1/],
-  [router, /subagentProvider: 'spawn'/, /provider: 'spawn'/],
-  [router, /dsh-plugin-subagent-director/, /@deepseek-ai\/dsh-tool-subagent/],
-]) {
-  for (const needle of source.slice(1)) assert.ok(needle.test(source[0]), String(needle))
-}
+assert.ok(patch.includes('provider: spawn'))
+assert.ok(patch.includes('enableRunInBackground: false'))
+assert.ok(patch.includes('maxDepth: 1'))
+// The switch is what lets the top-level model choose the child's route, and it
+// is also what moves both tools into the agent's own scope — the reason the mask
+// above is an empty allow-list. A row without it would silently take the named
+// mask path again, so the two must always land together.
+assert.ok(patch.includes('modelSelectionSettings: true'))
 // A row that omits a `.required()` Config key fails to mount, and ONE failed row
 // marks the whole preset broken — observed live as
 // `tool-todo (@deepseek-ai/dsh-tool-todo): invalid config: $.allowParallelInProgress

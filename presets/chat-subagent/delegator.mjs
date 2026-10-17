@@ -37,8 +37,8 @@
  * (3) `agent/created` is awaited by the creation transaction before the Agent is
  * announced (`packages/core/agent/src/index.ts:537-559`), so a mask registered
  * there is in place before the session's first request; a preset-scoped listener
- * receives descendant Agents too (shipped precedent: the official
- * `dsh-tool-subagent` listens the same way to install per Agent).
+ * receives descendant Agents too (shipped precedent: `dsh-tool-subagent`'s
+ * standing `modelSelectionSettings` install path).
  *
  * (4) Creation is not the only way to arrive here. The Web UI can switch a
  * BLANK session's preset, which goes `agentPresets.select` → `recompose` →
@@ -51,12 +51,9 @@
  * subagent list deliberately contains two names this bundle does not own —
  * `read_image` (registered only while an attachment store is mounted,
  * `packages/fs/tool-fs/src/index.ts:67-72`) and `list_directory` (a third-party
- * profile row) — so `installRestriction()` reads each name through
- * `tools.get(name, agent)`, the registry's own per-scope visibility lookup
- * (`core/tools/src/index.ts:1222-1232`; read-only, never emitting
- * `tools/change` the way the former probe-based restriction did), drops what
- * the deployment does not have, and warns once per name. A missing tool must
- * cost that tool, never the delegation.
+ * profile row) — so `installRestriction()` probes each name with a throwaway
+ * restriction, drops what the deployment does not have, and warns once per
+ * name. A missing tool must cost that tool, never the delegation.
  *
  * (6) The guard closes the plane no restriction can reach: registrations in an
  * agent's OWN layer are exempt from its restrictions, and on a profile that
@@ -73,19 +70,16 @@
  * to call the tool it delegates with — and it can never be named by `restrict()` at all
  * (`:1111-1112`).
  *
- * (7) The delegation row is a runtime router (`delegation-router.mjs`): when
- * the profile has `dsh-plugin-subagent-director` installed it mounts that
- * plugin's `subagent` tool (per-call `provider`/`model`/`reasoningEffort`
- * args, constrained to the Host authorized routes); otherwise it mounts the
- * official `@deepseek-ai/dsh-tool-subagent` WITHOUT `modelSelectionSettings`,
- * and children inherit the parent session's route. Either branch registers
- * the tool on the preset's STANDING layer, so `subagent` is an inherited,
- * restrictable name and the named allow-list below is an ordinary
- * restriction. The empty-list and guard-holds-the-surface design this file
- * previously carried is GONE with the flag itself: the per-agent injection
- * path it worked around crashes on overlapping plugin reloads and once left
- * sessions with no delegation tool at all (CHANGELOG has the incident) — this
- * preset never takes that path again.
+ * (7) `modelSelectionSettings: true` moves both top-level tools into each
+ * Agent's OWN scope (`tool-subagent/src/index.ts:608-611`, `:665-681`), where no
+ * restriction reaches them: `restrict()` validates against inherited names only
+ * (`packages/core/tools/src/index.ts:1194-1197,1114-1118`) and throws on a
+ * scope-local one. The top-level mask is therefore an EMPTY allow-list, which
+ * hides every inherited row and leaves the own layer alone (`:1204-1208`); the
+ * GUARD, not the mask, is what holds the callable surface at those two names. A
+ * delegated child joins the same composition and gets the same two
+ * registrations in its own scope, so its named mask cannot hide them either —
+ * its guard is what refuses both.
  */
 
 import { readFileSync } from 'node:fs'
@@ -97,13 +91,13 @@ export const name = 'chat-subagent/delegator'
 export const inject = ['tools', 'systemPrompt']
 
 /**
- * The one tool a top-level session of this preset may CALL: the delegation
- * tool, registered on the preset's standing plane by whichever implementation
- * `delegation-router.mjs` mounted (`subagent-director`, or the official
- * package without model selection). The mask below NAMES it — an inherited
- * name is what `tools.restrict()` accepts.
+ * The tools a top-level session of this preset may CALL: the delegation tool,
+ * plus the route companion that `modelSelectionSettings: true` mounts beside it
+ * (`tool-subagent/src/index.ts:362`) so the model can discover the routes the
+ * Host authorizes. Both are registered in the agent's OWN scope, which is why
+ * the mask below cannot name them and the guard is what bounds the surface.
  */
-export const DELEGATOR_TOOLS = ['subagent']
+export const DELEGATOR_TOOLS = ['subagent', 'list_subagent_models']
 
 /** PTC mode's model-direct transport (`packages/core/tools/src/ptc.ts:30`). */
 export const RUN_CODE = 'run_code'
@@ -126,7 +120,7 @@ export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', impo
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
-  = 'This session is a delegator-only preset: it delegates with `subagent`. Describe the task to `subagent` instead of acting directly.'
+  = 'This session is a delegator-only preset: it delegates with `subagent` and can inspect child routes with `list_subagent_models`. Describe the task to `subagent` instead of acting directly.'
 
 /** Reason the model reads when a read-only subagent names a tool it does not have. */
 const SUBAGENT_DENIAL
@@ -223,27 +217,31 @@ export function normalizeConfig(config, warn) {
 
 /**
  * Install one agent's tool mask, dropping the names this deployment does not
- * have. Presence is read through `tools.get(name, agent)` — the registry's own
- * per-scope visibility lookup, read-only and never emitting `tools/change`
- * (`packages/core/tools/src/index.ts:1222-1232`). What survives is installed
- * as ONE `allow` list — an allow-list excludes tools registered later, where
- * a deny list would admit them (`docs/subsystems/tools.md`). Masking runs
- * once per agent, before any of the agent's own restrictions exist, so the
- * read answers the plain registry state rather than a masked view.
+ * have. `restrict()` answers "is this name inheritable by this agent right now?"
+ * only by throwing, and the registry exposes no reader for that set, so each
+ * name is probed with a throwaway allow-restriction that is disposed
+ * immediately. What survives is installed as ONE `allow` list — an allow-list
+ * excludes tools registered later, where a deny list would admit them
+ * (`docs/subsystems/tools.md`).
  * @param tools - the agent's tools service, the scope the restriction lands on.
- * @param agent - the agent whose visibility the names are read through.
  * @param names - the names the agent is meant to keep.
  * @param warn - sink for one message per missing name.
- * @returns the disposer of the installed allow-list, undefined when no name survived.
+ * @returns the names actually installed.
  */
-export function installRestriction(tools, agent, names, warn) {
+export function installRestriction(tools, names, warn) {
   const kept = []
   for (const name of names) {
-    if (tools.get(name, agent) !== undefined) kept.push(name)
-    else warn(`tool "${name}" is not registered in this deployment; it is left out of the mask`)
+    try {
+      const probe = tools.restrict({ allow: [name] })
+      // The probe's restriction must not survive the question it answered.
+      probe?.()
+      kept.push(name)
+    } catch {
+      warn(`tool "${name}" is not registered in this deployment; it is left out of the mask`)
+    }
   }
-  if (kept.length === 0) return undefined
-  return tools.restrict({ allow: kept })
+  if (kept.length > 0) tools.restrict({ allow: kept })
+  return kept
 }
 
 /**
@@ -309,14 +307,18 @@ export function apply(ctx, config) {
         // Guard first: every later step is an improvement, and a failure in one
         // of them must not leave the session unmasked.
         installGuard(tools, delegatorAllowed, DELEGATOR_DENIAL, warn)
-        // A NAMED allow-list: the router mounts `subagent` on the preset's
-        // standing layer, so it is an inherited name `tools.restrict()` can
-        // validate, and the list hides everything else the session inherits
-        // — including `close_subagent` when the router mounted the director
-        // branch. The old empty-allow design belonged to
-        // `modelSelectionSettings: true`, whose per-agent own-layer
-        // registrations no restriction can name (see the header, (7)).
-        installRestriction(tools, agent, DELEGATOR_TOOLS, warn)
+        // An EMPTY allow-list, never a named one. `modelSelectionSettings: true`
+        // makes the row register `subagent` and `list_subagent_models` in the
+        // agent's OWN scope (`tool-subagent/src/index.ts:608-611`, `:665-681`),
+        // and `restrict()` refuses a scope-local name — its own wording is
+        // "unknown names, scope-local names ... fail", because the validation set
+        // holds inherited names only (`core/tools/src/index.ts:1194-1197,1114-1118`).
+        // A named list would throw on the first name, `installRestriction()` would
+        // drop it and install nothing, and the mask would silently stop existing.
+        // An empty list needs no name: it hides the whole inherited plane — every
+        // row this preset mounts for the child — and leaves the agent's own layer
+        // visible (`:1204-1208`), which is the delegation tool plus its companion.
+        tools.restrict({ allow: [] })
         // The picked text is the session's ENTIRE prompt (a `complete` section
         // collapses the assembly) and no runtime-context block reaches it —
         // the two knobs `chat-agent` sets for the same reason.
@@ -339,7 +341,7 @@ export function apply(ctx, config) {
         return
       }
       installGuard(tools, subagentAllowed, SUBAGENT_DENIAL, warn)
-      installRestriction(tools, agent, subagentTools, warn)
+      installRestriction(tools, subagentTools, warn)
       // Last, so a diagnostic can never sit between the child and its mask.
       info(`subagent ${String(agent?.id)} route ${childRoute(ctx, agent)}`)
     } catch (error) {
