@@ -8,8 +8,11 @@
  * parent's preset), so a mask registered there would leave the child with one
  * tool too. The top-level mask must also be installed from `tools/change`
  * reconciliation, because switching a blank session's preset in the UI emits
- * no `agent/created`. Losing either half restores the leak this preset exists
- * to avoid: a session that can only delegate, or a worker that can write.
+ * no `agent/created` — and LIFTED from that same reconciliation when the agent
+ * stops composing this preset, because an agent-scope registration outlives the
+ * composition that asked for it. Losing any half restores a shipped failure
+ * mode: a session that can only delegate, a worker that can write, or a coding
+ * session that still answers with the delegator's refusal.
  *
  * Not in `files`, so it never ships.
  */
@@ -60,7 +63,13 @@ function fakeTools({ known = MOUNTED, noGuard = false } = {}) {
       }
     },
   }
-  if (!noGuard) tools.guard = guard => { seen.guards.push(guard) }
+  if (!noGuard) tools.guard = guard => {
+    seen.guards.push(guard)
+    return () => {
+      const index = seen.guards.indexOf(guard)
+      if (index >= 0) seen.guards.splice(index, 1)
+    }
+  }
   return { tools, seen }
 }
 
@@ -70,8 +79,17 @@ function fakeScope({ known = MOUNTED, noGuard = false } = {}) {
   const systemPrompt = {
     suppressed: false,
     sections: [],
-    suppressRuntimeContext() { this.suppressed = true },
-    section(section) { this.sections.push(section) },
+    suppressRuntimeContext() {
+      this.suppressed = true
+      return () => { this.suppressed = false }
+    },
+    section(section) {
+      this.sections.push(section)
+      return () => {
+        const index = this.sections.indexOf(section)
+        if (index >= 0) this.sections.splice(index, 1)
+      }
+    },
     getSectionOrder(name) { return ORDERS[name] ?? 0 },
   }
   return { tools, systemPrompt, seen }
@@ -89,16 +107,26 @@ function fakeHost({ liveAgents = [], presetOf = () => undefined } = {}) {
   const handlers = new Map()
   const warnings = []
   const infos = []
+  const effects = []
   const ctx = {
     logger: { warn: message => warnings.push(message), info: message => infos.push(message) },
     on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]) },
+    // Cordis runs the effect body now and disposes its result with the fiber.
+    effect(callback) { const dispose = callback(); effects.push(dispose); return dispose },
     get(name) {
       if (name === 'agents') return { list: () => liveAgents }
       if (name === 'agentPresets') return { composedPreset: agentCtx => presetOf(agentCtx) }
       return undefined
     },
   }
-  return { ctx, warnings, infos, fire: (event, payload) => (handlers.get(event) ?? []).map(handler => handler(payload)) }
+  return {
+    ctx,
+    warnings,
+    infos,
+    fire: (event, payload) => (handlers.get(event) ?? []).map(handler => handler(payload)),
+    // What disposing the row's fiber does to everything the row installed.
+    dispose: () => { for (const dispose of effects.splice(0)) dispose?.() },
+  }
 }
 
 /** One agent of a known depth, carrying the scope its mask must land on. */
@@ -344,17 +372,112 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.deepEqual(host.infos, [])
 }
 
+// ── and the other direction: leaving the preset LIFTS the mask ───────────────
+//
+// The switch-in case above was the only direction this plugin reconciled, and
+// that is the shipped defect: what the delegator registers it registers on the
+// AGENT's own scope, which outlives the composition that asked for it — and
+// disposing the previous revision's standing scope does not reach it. A session
+// created on `chat-subagent` and then switched to a coding preset therefore kept
+// the delegation guard, and answered `list_subagent_models` with `This session
+// is a delegator-only preset: subagent is the only tool`.
+
+{
+  const agent = fakeAgent({ id: 'leaver' })
+  let composed = 'chat-subagent'
+  const host = fakeHost({ liveAgents: [agent], presetOf: () => composed })
+  apply(host.ctx, CONFIG)
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.equal(agent.scope.seen.guards.length, 1)
+  assert.equal(agent.scope.systemPrompt.sections.length, 1)
+  assert.equal(agent.scope.systemPrompt.suppressed, true)
+
+  // The same blank-session switch, now in the direction nothing reconciled.
+  composed = 'pair-coding-agent'
+  host.fire('tools/change', {})
+
+  assert.deepEqual(agent.scope.seen.restrictions, [])
+  assert.deepEqual(agent.scope.seen.guards, [])
+  assert.deepEqual(agent.scope.systemPrompt.sections, [])
+  assert.equal(agent.scope.systemPrompt.suppressed, false)
+
+  // Lifted, not merely forgotten: a session switched back is masked once more.
+  composed = 'chat-subagent'
+  host.fire('tools/change', {})
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.equal(agent.scope.seen.guards.length, 1)
+  assert.equal(agent.scope.systemPrompt.sections.length, 1)
+  assert.deepEqual(host.warnings, [])
+}
+
+// ── a mask is never installed on another preset's session ────────────────────
+
+{
+  const host = fakeHost({ presetOf: () => 'codex-coding-agent' })
+  apply(host.ctx, CONFIG)
+  const foreign = fakeAgent({ id: 'foreign-created' })
+  host.fire('agent/created', { agent: foreign })
+  assert.deepEqual(foreign.scope.seen.restrictions, [])
+  assert.deepEqual(foreign.scope.seen.guards, [])
+  assert.deepEqual(foreign.scope.systemPrompt.sections, [])
+  assert.equal(foreign.scope.systemPrompt.suppressed, false)
+}
+
+{
+  // A delegated child has not joined its preset yet when `agent/created` fires:
+  // `composedPreset()` answers `undefined`, and the mask is still ours.
+  const host = fakeHost({ presetOf: () => undefined })
+  apply(host.ctx, CONFIG)
+  const child = fakeAgent({ id: 'pre-join', runtimeDepth: 1 })
+  host.fire('agent/created', { agent: child })
+  assert.deepEqual(child.scope.seen.restrictions, [{ allow: [...SUBAGENT_TOOLS] }])
+  assert.equal(child.scope.seen.guards.length, 1)
+}
+
+// ── disposing the row lifts what it installed ────────────────────────────────
+
+{
+  const agent = fakeAgent({ id: 'remounted' })
+  const host = fakeHost({ liveAgents: [agent], presetOf: () => 'chat-subagent' })
+  apply(host.ctx, CONFIG)
+  assert.equal(agent.scope.systemPrompt.sections.length, 1)
+  host.dispose()
+  assert.deepEqual(agent.scope.seen.restrictions, [])
+  assert.deepEqual(agent.scope.seen.guards, [])
+  assert.deepEqual(agent.scope.systemPrompt.sections, [])
+  assert.equal(agent.scope.systemPrompt.suppressed, false)
+}
+
+// ── a disposed agent's mask leaves the map with it ───────────────────────────
+
+{
+  const agent = fakeAgent({ id: 'gone', runtimeDepth: 1 })
+  const host = fakeHost({ liveAgents: [agent], presetOf: () => 'chat-subagent' })
+  apply(host.ctx, CONFIG)
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...SUBAGENT_TOOLS] }])
+  host.fire('agent/disposed', { agent })
+  assert.deepEqual(agent.scope.seen.restrictions, [])
+  assert.deepEqual(agent.scope.seen.guards, [])
+  assert.deepEqual(host.warnings, [])
+}
+
 // ── the helpers stay honest when called directly ─────────────────────────────
 
 {
   const scope = fakeScope({ known: ['read', 'write'] })
   const warnings = []
-  assert.deepEqual(installRestriction(scope.tools, ['read', 'gone', 'write'], m => warnings.push(m)), ['read', 'write'])
+  const installed = installRestriction(scope.tools, ['read', 'gone', 'write'], m => warnings.push(m))
+  assert.deepEqual(installed.kept, ['read', 'write'])
   assert.deepEqual(scope.seen.restrictions, [{ allow: ['read', 'write'] }])
   assert.equal(warnings.length, 1)
-  installGuard(scope.tools, new Set(['read']), 'no', m => warnings.push(m))
+  // The list is liftable: that is how a switched-away session gets its tools back.
+  installed.dispose()
+  assert.deepEqual(scope.seen.restrictions, [])
+  const disposeGuard = installGuard(scope.tools, new Set(['read']), 'no', m => warnings.push(m))
   assert.equal(scope.seen.guards[0]({ name: 'write' }), 'no')
   assert.equal(scope.seen.guards[0]({ name: 'read' }), undefined)
+  disposeGuard()
+  assert.deepEqual(scope.seen.guards, [])
 }
 
 // ── the declaration is the single source of the list ─────────────────────────

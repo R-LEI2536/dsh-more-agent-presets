@@ -62,6 +62,18 @@
  * guard is monkey-proof: it runs after `tools/pre-execute` over the calling
  * agent's scope chain, so a name the model produces anyway is refused.
  *
+ * (7) A mask registered on an AGENT's scope outlives the composition that asked
+ * for it, so BOTH directions of a preset switch must be reconciled — not only
+ * the arriving one. The switch in (4) leaves `agent.ctx` alive: what a previous
+ * preset registered there is owned by that agent scope, and disposing the
+ * previous revision's standing scope does not reach it. Shipped behaviour before
+ * this rule: a session created on `chat-subagent` and then switched to a coding
+ * preset kept the delegation guard, so the coding session answered
+ * `list_subagent_models` with the delegator's refusal. `reconcile()` therefore
+ * LIFTS the mask as soon as `composedPreset(agent.ctx)` stops naming this preset,
+ * every install records its disposer for that, `agent/disposed` frees the entry,
+ * and disposing this row lifts whatever it installed.
+ *
  * `run_code` is the PTC mode presentation transport, not a capability: the
  * model-direct call under `ptc` may only name it, while the nested dispatch it
  * performs is resolved through the same restriction-filtered view. The guard
@@ -208,7 +220,8 @@ export function normalizeConfig(config, warn) {
  * @param tools - the agent's tools service, the scope the restriction lands on.
  * @param names - the names the agent is meant to keep.
  * @param warn - sink for one message per missing name.
- * @returns the names actually installed.
+ * @returns the names actually installed, and the disposer that lifts the list
+ *   (`undefined` when the deployment has none of the names).
  */
 export function installRestriction(tools, names, warn) {
   const kept = []
@@ -222,8 +235,7 @@ export function installRestriction(tools, names, warn) {
       warn(`tool "${name}" is not registered in this deployment; it is left out of the mask`)
     }
   }
-  if (kept.length > 0) tools.restrict({ allow: kept })
-  return kept
+  return { kept, dispose: kept.length > 0 ? tools.restrict({ allow: kept }) : undefined }
 }
 
 /**
@@ -234,6 +246,7 @@ export function installRestriction(tools, names, warn) {
  * @param allowed - the names the agent may call.
  * @param reason - the refusal text the model reads.
  * @param warn - sink for the build-without-guard degradation.
+ * @returns the guard's disposer, or `undefined` on a build without `guard()`.
  */
 export function installGuard(tools, allowed, reason, warn) {
   if (typeof tools.guard !== 'function') {
@@ -241,9 +254,9 @@ export function installGuard(tools, allowed, reason, warn) {
     // loudly instead of failing the session's creation (same rule as
     // `presets/chat-agent/no-tools.mjs`).
     warn('this DSH build has no tools.guard(); a tool registered in the agent scope stays callable')
-    return
+    return undefined
   }
-  tools.guard((exec) => {
+  return tools.guard((exec) => {
     const called = exec?.name
     if (typeof called !== 'string') return undefined
     if (called === RUN_CODE || allowed.has(called)) return undefined
@@ -276,25 +289,69 @@ export function apply(ctx, config) {
   const subagentAllowed = new Set(subagentTools)
   const delegatorAllowed = new Set(DELEGATOR_TOOLS)
   const handled = new WeakSet()
+  /** agent → the disposers that lift the mask this plugin installed on it. */
+  const masks = new Map()
+
+  /**
+   * Whether an agent composes this preset right now. An agent that joined no
+   * preset resolves to `undefined` — a delegated child before its join, a
+   * deployment composing no roster — and is treated as ours, because masking is
+   * what this plugin exists for and `reconcile()` lifts a wrong guess. Only a
+   * composition that names a DIFFERENT preset is refused, which is what keeps a
+   * mask off a session this preset does not own.
+   * @param agent - the agent to classify.
+   * @returns whether this preset owns the agent's composition.
+   */
+  const belongs = (agent) => {
+    const presets = ctx.get('agentPresets')
+    if (presets === undefined) return true
+    const composed = presets.composedPreset(agent.ctx)
+    return composed === undefined || composed === presetId
+  }
+
+  /**
+   * Lift the mask one agent carries. What this plugin registers it registers on
+   * the agent's OWN scope, which outlives the composition that asked for it
+   * (header point 7), so every install has to be undoable and every installer
+   * has to record how.
+   * @param agent - the agent whose mask must go.
+   * @param disposers - what to dispose; defaults to what `mask()` recorded.
+   */
+  const lift = (agent, disposers = masks.get(agent)) => {
+    handled.delete(agent)
+    masks.delete(agent)
+    for (const dispose of disposers ?? []) {
+      try {
+        dispose()
+      } catch (error) {
+        warn(`lifting the mask of agent ${String(agent?.id)} failed: ${String(error)}`)
+      }
+    }
+  }
 
   const mask = (agent) => {
     // Reserve before registering: `restrict()` notifies `tools/change`, which
     // re-enters the reconciliation below.
     if (handled.has(agent)) return
     handled.add(agent)
+    /** Every install that can be undone, in install order. */
+    const disposers = []
+    const install = (disposer) => {
+      if (typeof disposer === 'function') disposers.push(disposer)
+    }
     try {
       const tools = agent.ctx.tools
       const depth = depthOf(agent)
       if (depth === 0) {
         // Guard first: every later step is an improvement, and a failure in one
         // of them must not leave the session unmasked.
-        installGuard(tools, delegatorAllowed, DELEGATOR_DENIAL, warn)
-        installRestriction(tools, DELEGATOR_TOOLS, warn)
+        install(installGuard(tools, delegatorAllowed, DELEGATOR_DENIAL, warn))
+        install(installRestriction(tools, DELEGATOR_TOOLS, warn).dispose)
         // The picked text is the session's ENTIRE prompt (a `complete` section
         // collapses the assembly) and no runtime-context block reaches it —
         // the two knobs `chat-agent` sets for the same reason.
         const systemPrompt = agent.ctx.systemPrompt
-        systemPrompt.suppressRuntimeContext()
+        install(systemPrompt.suppressRuntimeContext())
         const table = personaTable()
         const note = delegationNote ?? DELEGATION_NOTE
         // A function text is what makes the prompt follow the model the Session
@@ -307,34 +364,50 @@ export function apply(ctx, config) {
           text: context => personaText(sessionModel(ctx, context?.agent), table, note),
         }
         // `systemPrompt.section()` registers through the AGENT's context, so the
-        // agent's own scope disposes this section with it.
-        systemPrompt.section(prompt)
-        return
+        // agent's own scope disposes this section with it — and `lift()` also
+        // disposes it earlier, the moment the agent leaves this preset.
+        install(systemPrompt.section(prompt))
+      } else {
+        install(installGuard(tools, subagentAllowed, SUBAGENT_DENIAL, warn))
+        install(installRestriction(tools, subagentTools, warn).dispose)
+        // Last, so a diagnostic can never sit between the child and its mask.
+        info(`subagent ${String(agent?.id)} route ${childRoute(ctx, agent)}`)
       }
-      installGuard(tools, subagentAllowed, SUBAGENT_DENIAL, warn)
-      installRestriction(tools, subagentTools, warn)
-      // Last, so a diagnostic can never sit between the child and its mask.
-      info(`subagent ${String(agent?.id)} route ${childRoute(ctx, agent)}`)
+      masks.set(agent, disposers)
     } catch (error) {
       warn(`masking agent ${String(agent?.id)} failed: ${String(error)}`)
+      // Half a mask is worse than none: undo what did land.
+      lift(agent, disposers)
     }
   }
 
-  ctx.on('agent/created', ({ agent }) => mask(agent))
+  ctx.on('agent/created', ({ agent }) => {
+    if (belongs(agent)) mask(agent)
+  })
+  // A disposed agent needs no mask, and must not stay in the map.
+  ctx.on('agent/disposed', ({ agent }) => lift(agent))
+  // Disposing THIS row (HMR, a re-mounted revision, a removed patch) lifts what
+  // it installed, so no agent keeps a mask no live plugin owns.
+  ctx.effect(() => () => { for (const agent of [...masks.keys()]) lift(agent) })
 
   if (presetId === undefined) return
 
-  /** Mask every live agent of this preset that creation never announced to us. */
+  /**
+   * Mask every live agent of this preset that creation never announced to us,
+   * and LIFT the mask this plugin left on an agent that stopped composing it.
+   */
   const reconcile = () => {
     const agents = ctx.get('agents')
-    if (agents === undefined) return
     const presets = ctx.get('agentPresets')
+    if (agents === undefined || presets === undefined) return
     for (const agent of agents.list()) {
-      if (presets?.composedPreset(agent.ctx) === presetId) mask(agent)
+      if (belongs(agent)) mask(agent)
+      else lift(agent)
     }
   }
-  // Covers the blank-session preset switch, a re-mounted plugin revision, and
-  // any tool registration that changes what an install would have kept.
+  // Covers the blank-session preset switch — in BOTH directions — a re-mounted
+  // plugin revision, and any tool registration that changes what an install
+  // would have kept.
   ctx.on('tools/change', reconcile)
   reconcile()
 }
