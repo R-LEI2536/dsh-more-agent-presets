@@ -2,12 +2,14 @@
 # derived from `presets/chat-agent.patch.yml`.
 #
 # The rule this preset exists to break: `chat-agent` can call nothing, this one
-# can call ONE thing — `subagent`, the tool that creates a subagent to carry the
-# task out. The delegated subagent is a real agent with a real (read-only) tool
-# set; the top-level session is the delegator.
+# can call ONE thing that acts — `subagent`, the tool that creates a subagent to
+# carry the task out — plus the read-only `list_subagent_models` the
+# `modelSelectionSettings` opt-in registers, which only reports the routes the
+# session may name. The delegated subagent is a real agent with a real
+# (read-only) tool set; the top-level session is the delegator.
 #
 # WHY THE MASK IS NOT DECLARED HERE. The obvious shape — a preset-plane
-# `ctx.tools.restrict({ allow: ['subagent'] })` next to these rows — is wrong,
+# `ctx.tools.restrict({ allow: [] })` next to these rows — is wrong,
 # and silently so: a delegated child JOINS ITS PARENT'S PRESET
 # (`applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`,
 # `packages/subagent/subagent/src/child-agent.ts:200-219`), and the standing
@@ -37,17 +39,27 @@
 # this deployment does not have, so a missing tool costs that tool and never the
 # delegation.
 #
-# THE ONE TOOL. `@deepseek-ai/dsh-tool-subagent` mounts one model-facing tool per
-# instance, on the `spawn` provider (a fresh child that never sees this
-# conversation, so a task prompt must stand alone). `enableRunInBackground:
-# false` removes `run_in_background` from the schema entirely, so the single
-# call waits for the child and returns its report — a background start would
-# need `job_output`/`send_message` to collect, and those are second tools this
-# preset does not have. `backgroundMode: one-shot` is the matching policy.
-# `maxDepth: 1` states the recursion budget outright: the child may not delegate
-# again (the mask also hides `subagent` from it, and the guard refuses it).
-# `modelSelectionSettings` is deliberately off — it would register the shared
-# `list_subagent_models` tool and break "exactly one tool".
+# THE ONE TOOL THAT ACTS. `@deepseek-ai/dsh-tool-subagent` mounts one
+# model-facing delegation tool per instance, on the `spawn` provider (a fresh
+# child that never sees this conversation, so a task prompt must stand alone).
+# `enableRunInBackground: false` removes `run_in_background` from the schema
+# entirely, so the single call waits for the child and returns its report — a
+# background start would need `job_output`/`send_message` to collect, and those
+# are second tools this preset does not have. `backgroundMode: one-shot` is the
+# matching policy. `maxDepth: 1` states the recursion budget outright: the child
+# may not delegate again (its mask keeps only the read-only names, and the guard
+# refuses `subagent` itself).
+#
+# WHY `modelSelectionSettings: true` HERE TOO. With the flag on, the top-level
+# session gains the optional `provider`/`model`/`reasoning_effort` parameters on
+# `subagent`, and `list_subagent_models` to read the Host's authorized routes —
+# so a chat session can name the child's model like the five coding presets do.
+# The price is a catalog of TWO entries, one acting and one read-only. The flag
+# is also a row-level switch on WHERE the tool registers: it moves from this
+# preset's standing plane to each Agent's OWN layer (`delegator.mjs` point 8),
+# where `restrict()` cannot name it. That is why `delegator.mjs` decides the
+# top-level mask from the registry at runtime and seals the inherited surface
+# with `restrict({ allow: [] })`.
 #
 # The top-level persona text is NOT here: `delegator.mjs` composes it from the
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
@@ -65,7 +77,7 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "只调用 subagent 一个工具：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "顶层只调用 subagent 干活（可为子 agent 指定模型）：把任务交给只读子 agent 去查、去读，自己专注对话。"
         plugins:
           # The two masks plus the delegator persona. `presetId` must equal this
           # declaration's `id` (it is what tells the plugin which live agents
@@ -87,7 +99,7 @@
                 - todo_write
                 - job_list
 
-          # The one model-facing tool (header).
+          # The one model-facing tool that acts (header).
           - id: tool-subagent
             name: '@deepseek-ai/dsh-tool-subagent'
             config:
@@ -96,6 +108,11 @@
               backgroundMode: one-shot
               enableRunInBackground: false
               maxDepth: 1
+              # Authorized routes come from the Host's
+              # `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row,
+              # which the profile must mount: without it this row fails and the
+              # WHOLE preset reports a load failure.
+              modelSelectionSettings: true
               persona: >-
                 You are a delegated read-only subagent of a chat session. Work only through the tools
                 in your catalog, keep the investigation tight, and answer with a concise report the

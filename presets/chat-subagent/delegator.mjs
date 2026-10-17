@@ -1,10 +1,12 @@
 /**
  * chat-subagent — the two masks and the delegator persona.
  *
- * The preset's invariant: a TOP-LEVEL session may call exactly one tool,
- * `subagent`; the delegated subagent may call only the read-only names its
- * declaration lists. Nothing here can be expressed as one standing-scope
- * restriction, and this module exists because of that.
+ * The preset's invariant: a TOP-LEVEL session may call exactly one tool that
+ * ACTS, `subagent` — plus the read-only `list_subagent_models` that the
+ * `modelSelectionSettings` opt-in registers (point 8). The delegated subagent
+ * may call only the read-only names its declaration lists. Nothing here can be
+ * expressed as one standing-scope restriction, and this module exists because
+ * of that.
  *
  * No prompt text is written in this file: the per-model half is
  * `../shared/model-personas.json` and the delegation half is
@@ -18,8 +20,8 @@
  * because a child joins its parent's preset rather than a fresh one:
  * `applyChildComposition` calls `agentPresets.composeFrom(childCtx, parent.ctx)`
  * (`packages/subagent/subagent/src/child-agent.ts:200-219`), which parents the
- * child's scope to the same standing scope. A standing `allow: ['subagent']`
- * would thus leave the child with one tool too, and a restriction can only
+ * child's scope to the same standing scope. A standing `allow: []` would thus
+ * leave the child with no tool at all, and a restriction can only
  * narrow — the child's own `toolFilter` cannot widen what an ancestor masked.
  *
  * (2) A restriction registered on ONE AGENT's own scope does not reach a
@@ -74,6 +76,23 @@
  * every install records its disposer for that, `agent/disposed` frees the entry,
  * and disposing this row lifts whatever it installed.
  *
+ * (8) The two names the opt-in adds — `subagent` and `list_subagent_models` —
+ * are registered in each Agent's OWN layer, not on this preset's standing plane
+ * (`@deepseek-ai/dsh-tool-subagent` `src/index.ts:665-704`: the install runs
+ * from the `agent/created` listener and, in its own words, "installs the sampled
+ * tool definition in each Agent's own scope"). `restrict()` accepts only names a
+ * scope can INHERIT (`packages/core/tools/src/index.ts:1194-1201`), so a NAMED
+ * allow-list can no longer express the top-level mask: under the opt-in path
+ * `restrict({ allow: ['subagent'] })` throws `names unknown global tool
+ * "subagent"`, the probe drops the name, and the whole inherited surface would
+ * stay in the catalog. The mask is therefore decided from the registry at
+ * runtime — the probe in `installRestriction()` answers whether the delegation
+ * tool is INHERITED (a `dsh-tool-subagent` older than the opt-in, where the
+ * named list is right) or scope-local (the opt-in path, where the inherited
+ * surface is sealed with `restrict({ allow: [] })` instead). Own-layer
+ * registrations survive an empty allow-list by design (`:1202-1208`), so both
+ * names stay visible and the guard is what refuses every other call.
+ *
  * `run_code` is the PTC mode presentation transport, not a capability: the
  * model-direct call under `ptc` may only name it, while the nested dispatch it
  * performs is resolved through the same restriction-filtered view. The guard
@@ -85,13 +104,27 @@
 import { readFileSync } from 'node:fs'
 
 import { personaTable, pickPersona, sessionModel } from '../shared/model-persona.mjs'
+// The two route readers live in `presets/shared/`: the five coding presets log
+// the same line through `subagent-route-log.mjs`, so there is one implementation.
+import { childRoute, depthOf } from '../shared/subagent-route-log.mjs'
 
 export const name = 'chat-subagent/delegator'
 
 export const inject = ['tools', 'systemPrompt']
 
-/** The only tool a top-level session of this preset may call. */
-export const DELEGATOR_TOOLS = ['subagent']
+/** The one tool a top-level session of this preset may call to ACT. */
+export const DELEGATOR_TOOL = 'subagent'
+
+/**
+ * Read-only route discovery, registered by the `modelSelectionSettings` opt-in
+ * (`@deepseek-ai/dsh-tool-subagent` `src/list-models.ts`). It changes nothing —
+ * it reports the routes this Session may name — so a top-level session may call
+ * it too, and the delegation call is where a route is chosen.
+ */
+export const ROUTE_LIST_TOOL = 'list_subagent_models'
+
+/** The names a top-level session of this preset may call (point 8). */
+export const DELEGATOR_TOOLS = [DELEGATOR_TOOL, ROUTE_LIST_TOOL]
 
 /** PTC mode's model-direct transport (`packages/core/tools/src/ptc.ts:30`). */
 export const RUN_CODE = 'run_code'
@@ -114,50 +147,15 @@ export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', impo
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
-  = 'This session is a delegator-only preset: `subagent` is the only tool. Describe the task to it instead of acting directly.'
+  = 'This session is a delegator-only preset: `subagent` is the only tool that acts, and `list_subagent_models` only inspects the routes it may name. Describe the task to `subagent` instead of acting directly.'
 
 /** Reason the model reads when a read-only subagent names a tool it does not have. */
 const SUBAGENT_DENIAL
   = 'This delegated subagent is read-only: it cannot run commands, write or edit files, or delegate further. State the limitation in your reply.'
 
-/**
- * The agent's delegation depth, read the way `@deepseek-ai/dsh-subagent` reads it
- * (`packages/subagent/subagent/src/depth.ts:28-36`): the persisted header is the
- * monotone floor and the merge-extensible runtime field may only deepen it,
- * because a resumed child arrives with fresh options and counting it from zero
- * would let it delegate as if it were top-level.
- * @param agent - the created agent.
- * @returns its non-negative depth, zero for a top-level session.
- */
-export function depthOf(agent) {
-  const header = agent?.session?.header?.delegationDepth
-  const runtime = agent?.options?.subagentDepth
-  return Math.max(
-    typeof header === 'number' && Number.isSafeInteger(header) ? header : 0,
-    typeof runtime === 'number' && Number.isSafeInteger(runtime) ? runtime : 0,
-  )
-}
-
-/**
- * The provider/model a delegated child was created with — the one line the
- * terminal says about a child's route. A child does not choose a route: it
- * INHERITS the parent's, resolved into its creation options
- * (`resolveChildAgentOptions()`, `packages/subagent/subagent/src/child-agent.ts:99-120`,
- * reached from `subagent-in-process-driver/src/index.ts:140`), and this preset
- * turns model selection off, so no call can override it. The model is read
- * through `sessionModel()` for the same reason the persona is: a child's own
- * Session selection wins where one exists, and `agent.options.model` is the
- * fallback rather than the answer.
- * @param ctx - the preset's context, for the optional projection read.
- * @param agent - the delegated child.
- * @returns `provider/model`, or whichever half the harness stated, or `unknown`.
- */
-export function childRoute(ctx, agent) {
-  const provider = agent?.options?.provider
-  const model = sessionModel(ctx, agent)
-  const halves = [provider, model].filter(half => typeof half === 'string' && half.trim() !== '')
-  return halves.length === 0 ? 'unknown' : halves.join('/')
-}
+// Re-exported for the callers that have always imported the route readers from
+// this file (`check-delegator.mjs`); the implementation is the shared module.
+export { childRoute, depthOf }
 
 /**
  * A top-level session's whole system prompt: the per-model text from the table
@@ -239,6 +237,25 @@ export function installRestriction(tools, names, warn) {
 }
 
 /**
+ * Seal the INHERITED surface when the delegation tool is not on it. The mask
+ * cannot name that tool — under `modelSelectionSettings` it is registered in the
+ * Agent's own layer, which no restriction reaches and none needs to (point 8) —
+ * so an empty allow-list hides every inherited row (`presets/chat-agent/no-tools.mjs`
+ * is the same one line) and the guard refuses whatever a model produces anyway.
+ * @param tools - the agent's tools service, the scope the restriction lands on.
+ * @param warn - sink for a registry without `restrict()`.
+ * @returns the restriction's disposer, or `undefined` when it could not install.
+ */
+export function installInheritedSeal(tools, warn) {
+  try {
+    return tools.restrict({ allow: [] })
+  } catch (error) {
+    warn(`sealing the inherited tool surface failed: ${String(error)}`)
+    return undefined
+  }
+}
+
+/**
  * Install the monotonic denial that covers what a restriction cannot: names the
  * agent's OWN layer registers (Team tools on a profile that mounts the agent-team
  * bundle) and any name a model produces that is not in the allowed set.
@@ -286,7 +303,11 @@ export function apply(ctx, config) {
   const info = (message) => ctx.logger.info(`chat-subagent/delegator: ${message}`)
 
   const { presetId, subagentTools, delegationNote } = normalizeConfig(config, warn)
-  const subagentAllowed = new Set(subagentTools)
+  // The child is a member of this preset's composition too, so it also sees the
+  // two own-layer names; the guard must agree with its catalog. `subagent` is
+  // refused — `maxDepth: 1` is the recursion budget — and the read-only route
+  // lister is allowed, because it changes nothing.
+  const subagentAllowed = new Set([...subagentTools, ROUTE_LIST_TOOL])
   const delegatorAllowed = new Set(DELEGATOR_TOOLS)
   const handled = new WeakSet()
   /** agent → the disposers that lift the mask this plugin installed on it. */
@@ -346,7 +367,20 @@ export function apply(ctx, config) {
         // Guard first: every later step is an improvement, and a failure in one
         // of them must not leave the session unmasked.
         install(installGuard(tools, delegatorAllowed, DELEGATOR_DENIAL, warn))
-        install(installRestriction(tools, DELEGATOR_TOOLS, warn).dispose)
+        // Which restriction this mask needs depends on where the delegation tool
+        // was registered, and only the registry knows: the probe is silent here
+        // because "not inheritable" is the EXPECTED answer under the opt-in
+        // (point 8), not a deployment defect.
+        const probe = installRestriction(tools, [DELEGATOR_TOOL], () => {})
+        if (probe.kept.length > 0) {
+          // The tool is on the standing plane, so this build's
+          // `dsh-tool-subagent` predates the opt-in and the named list is right.
+          warn('`subagent` is registered on this preset\'s standing plane, so this DSH build does not implement `modelSelectionSettings`: delegating works, but a call cannot name the child\'s model')
+          install(probe.dispose)
+        } else {
+          // Opt-in path: the names are scope-local, so seal the inherited surface.
+          install(installInheritedSeal(tools, warn))
+        }
         // The picked text is the session's ENTIRE prompt (a `complete` section
         // collapses the assembly) and no runtime-context block reaches it —
         // the two knobs `chat-agent` sets for the same reason.

@@ -1,5 +1,5 @@
 /**
- * Runnable check for the five coding presets' subagent model-selection opt-in.
+ * Runnable check for the presets' subagent model-selection opt-in.
  *
  *   node check-subagent-model-selection.mjs
  *
@@ -9,9 +9,10 @@
  * inherits the parent session's route (`install(ctx, undefined)`, `:608-611`);
  * with it on the Host's `subagent-model-selection` setting supplies the
  * authorized list and the session also gains `list_subagent_models`. The five
- * coding presets opt in; `chat-subagent` deliberately does not, because the
- * shared discovery tool would break its "exactly one tool" invariant, and
- * `chat-agent` has no tool row at all.
+ * coding presets opt in, and so does `chat-subagent` — its catalog then holds
+ * two entries, one acting tool and one read-only lister, and `delegator.mjs`
+ * decides its mask from where the tool registered (point 8). `chat-agent` has no
+ * tool row at all.
  *
  * The opt-in is also a Host dependency: the row throws when the
  * `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row is absent, and
@@ -24,7 +25,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-/** The presets whose spawn delegation row opts into Host model selection. */
+/**
+ * The presets whose spawn delegation row opts into Host model selection AND
+ * mounts a fork row that must stay off the opt-in.
+ */
 const OPTED_IN = [
   'qwencode-coding-agent',
   'iflow-coding-agent',
@@ -68,10 +72,25 @@ for (const id of OPTED_IN) {
   assert.doesNotMatch(configOf(patch, 'tool-subagent-fork'), /modelSelectionSettings/, `${id}: the fork row stays off`)
 }
 
-// chat-subagent: off by design. Prose may name the key (the header explains why
-// it is off), so the assertion is about the config key only.
+// chat-subagent: in, for the same capability. Its catalog holds two entries —
+// `subagent` acts, `list_subagent_models` only reports the authorized routes —
+// so its "exactly one tool" invariant reads "exactly one tool that ACTS". It
+// mounts no fork row, so only the spawn opt-in applies here.
 const chatSubagent = read('chat-subagent')
-assert.doesNotMatch(chatSubagent, /^\s+modelSelectionSettings:/m, 'chat-subagent keeps its one-tool invariant')
+const chatSpawn = configOf(chatSubagent, 'tool-subagent')
+assert.match(chatSpawn, /^\s+provider: spawn$/m, 'chat-subagent: the delegation row must keep the spawn transport')
+assert.match(chatSpawn, /^\s+toolName: subagent$/m, 'chat-subagent: the delegation row must keep the `subagent` name')
+assert.match(
+  chatSpawn,
+  /^\s+modelSelectionSettings: true$/m,
+  'chat-subagent: the delegation row must opt into Host subagent model selection',
+)
+assert.equal(
+  [...chatSubagent.matchAll(/^\s+modelSelectionSettings: true$/gm)].length,
+  1,
+  'chat-subagent: exactly one row opts in',
+)
+assert.doesNotMatch(chatSubagent, /- id: tool-subagent-fork/, 'chat-subagent mounts no fork row')
 
 // chat-agent: the zero-tool preset must not grow a delegation row.
 const chatAgent = read('chat-agent')

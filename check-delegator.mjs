@@ -14,6 +14,13 @@
  * mode: a session that can only delegate, a worker that can write, or a coding
  * session that still answers with the delegator's refusal.
  *
+ * The TOP-LEVEL restriction is decided from the registry at runtime
+ * (`delegator.mjs` point 8): `modelSelectionSettings` moves the delegation tool
+ * into each Agent's own layer, where `restrict()` cannot name it, so the mask
+ * seals the inherited surface with an empty allow-list — while a build that
+ * still registers the tool on the preset plane keeps the named list. Both paths
+ * are checked below.
+ *
  * Not in `files`, so it never ships.
  */
 
@@ -24,12 +31,15 @@ import {
   apply,
   childRoute,
   DELEGATION_NOTE,
+  DELEGATOR_TOOL,
   DELEGATOR_TOOLS,
   depthOf,
   installGuard,
+  installInheritedSeal,
   installRestriction,
   normalizeConfig,
   personaText,
+  ROUTE_LIST_TOOL,
   RUN_CODE,
 } from './presets/chat-subagent/delegator.mjs'
 
@@ -37,7 +47,13 @@ import {
 const SUBAGENT_TOOLS = ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'job_list']
 
 /** Names a deployment with every row mounted exposes to an agent of this preset. */
-const MOUNTED = ['subagent', 'read', 'write', 'edit', 'read_image', 'glob', 'grep', 'todo_write', 'job_output', 'job_list', 'job_kill', 'list_directory']
+const MOUNTED = ['read', 'write', 'edit', 'read_image', 'glob', 'grep', 'todo_write', 'job_output', 'job_list', 'job_kill', 'list_directory']
+
+/**
+ * The same deployment with the delegation tool still on the PRESET plane: a
+ * `dsh-tool-subagent` older than the `modelSelectionSettings` opt-in.
+ */
+const MOUNTED_STANDING = [...MOUNTED, 'subagent']
 
 const ORDERS = { DEPLOYMENT_PERSONA_PREFIX: 100 }
 
@@ -202,14 +218,19 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   const agent = fakeAgent({ id: 'top' })
   host.fire('agent/created', { agent })
 
-  // The probes were disposed; what remains is the single allow-list.
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
-  // One probe plus the installed restriction: the mask asked the registry first.
+  // `subagent` is not on this deployment's preset plane — the opt-in registers it
+  // in the agent's own layer — so the mask seals the inherited surface instead of
+  // naming a tool `restrict()` cannot see.
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
+  // One silent probe plus the installed restriction: the mask asked the registry
+  // first, and "not inheritable" is the expected answer on this path.
   assert.equal(agent.scope.seen.calls, 2)
 
   assert.equal(agent.scope.seen.guards.length, 1)
   const guard = agent.scope.seen.guards[0]
-  assert.equal(guard({ name: 'subagent' }), undefined)
+  // Both names the opt-in registers are callable: the delegation tool that acts,
+  // and the read-only lister `restrict()` cannot see either.
+  for (const name of DELEGATOR_TOOLS) assert.equal(guard({ name }), undefined)
   // PTC mode's model-direct transport must stay callable; the restriction still
   // bounds what the nested dispatch can bind.
   assert.equal(guard({ name: RUN_CODE }), undefined)
@@ -260,6 +281,9 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.equal(worker.scope.seen.calls, SUBAGENT_TOOLS.length + 1)
   const guard = worker.scope.seen.guards[0]
   assert.equal(guard({ name: 'read' }), undefined)
+  // A child belongs to this composition too, so the lister is in its catalog; the
+  // guard agrees, instead of listing a tool that would always refuse.
+  assert.equal(guard({ name: ROUTE_LIST_TOOL }), undefined)
   assert.equal(guard({ name: RUN_CODE }), undefined)
   for (const name of ['write', 'edit', 'bash', 'subagent', 'spawn_teammate']) {
     assert.equal(typeof guard({ name }), 'string')
@@ -290,6 +314,27 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.equal(childRoute(host.ctx, fakeAgent({ model: '', provider: '  ' })), 'unknown')
   // An absent agent is a diagnostic call, not a crash.
   assert.equal(childRoute(host.ctx, undefined), 'unknown')
+}
+
+// ── a build whose dsh-tool-subagent predates the opt-in ──────────────────────
+
+{
+  const host = fakeHost()
+  apply(host.ctx, CONFIG)
+  const agent = fakeAgent({ id: 'top-standing', scope: fakeScope({ known: MOUNTED_STANDING }) })
+  host.fire('agent/created', { agent })
+
+  // The delegation tool IS inheritable here, so the named list is the right mask
+  // and the session keeps working: the missing thing is the capability, and the
+  // warning says so once instead of leaving the session with no tool at all.
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [DELEGATOR_TOOL] }])
+  assert.equal(agent.scope.seen.calls, 2)
+  assert.equal(agent.scope.seen.guards.length, 1)
+  assert.equal(agent.scope.seen.guards[0]({ name: DELEGATOR_TOOL }), undefined)
+  assert.equal(host.warnings.length, 1)
+  assert.match(host.warnings[0], /standing plane/)
+  host.fire('agent/created', { agent: fakeAgent({ id: 'top-standing-2', scope: fakeScope({ known: MOUNTED_STANDING }) }) })
+  assert.equal(host.warnings.length, 1)
 }
 
 // ── a deployment that lacks the two profile-dependent names ──────────────────
@@ -330,7 +375,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   apply(host.ctx, CONFIG)
   const agent = fakeAgent({ id: 'top-no-guard', scope: fakeScope({ noGuard: true }) })
   host.fire('agent/created', { agent })
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
   assert.ok(host.warnings.some(m => m.includes('no tools.guard()')))
 }
 
@@ -355,7 +400,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   bound = true
   host.fire('tools/change', {})
 
-  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(ours.scope.seen.guards.length, 1)
   assert.equal(ours.scope.systemPrompt.sections.length, 1)
   // Another preset's agent is untouched.
@@ -364,7 +409,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.deepEqual(foreign.scope.systemPrompt.sections, [])
   // Idempotent: a later change must not stack a second mask.
   host.fire('tools/change', {})
-  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.deepEqual(ours.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(ours.scope.seen.guards.length, 1)
   assert.equal(ours.scope.systemPrompt.sections.length, 1)
   // Recomposed twice, the route line did not fire: `ours` is a top-level
@@ -387,7 +432,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   let composed = 'chat-subagent'
   const host = fakeHost({ liveAgents: [agent], presetOf: () => composed })
   apply(host.ctx, CONFIG)
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(agent.scope.seen.guards.length, 1)
   assert.equal(agent.scope.systemPrompt.sections.length, 1)
   assert.equal(agent.scope.systemPrompt.suppressed, true)
@@ -404,7 +449,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // Lifted, not merely forgotten: a session switched back is masked once more.
   composed = 'chat-subagent'
   host.fire('tools/change', {})
-  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [...DELEGATOR_TOOLS] }])
+  assert.deepEqual(agent.scope.seen.restrictions, [{ allow: [] }])
   assert.equal(agent.scope.seen.guards.length, 1)
   assert.equal(agent.scope.systemPrompt.sections.length, 1)
   assert.deepEqual(host.warnings, [])
@@ -478,6 +523,14 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.equal(scope.seen.guards[0]({ name: 'read' }), undefined)
   disposeGuard()
   assert.deepEqual(scope.seen.guards, [])
+  // The seal is the same install by another name, and it is liftable too.
+  const sealed = installInheritedSeal(scope.tools, m => warnings.push(m))
+  assert.deepEqual(scope.seen.restrictions, [{ allow: [] }])
+  sealed()
+  assert.deepEqual(scope.seen.restrictions, [])
+  // A registry without `restrict()` degrades loudly instead of failing the mask.
+  assert.equal(installInheritedSeal({}, m => warnings.push(m)), undefined)
+  assert.match(warnings.at(-1), /sealing the inherited tool surface failed/)
 }
 
 // ── the declaration is the single source of the list ─────────────────────────

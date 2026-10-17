@@ -486,6 +486,14 @@
                   toolName: subagent_fork
                   backgroundMode: continuable
 
+              # One terminal line per delegated child: `subagent <id> route
+              # <provider>/<model>`. Nothing else reports which model a child
+              # ended up on — a route is named by the call, or inherited.
+              - id: subagent-route-log
+                name: 'dsh-more-agent-presets/presets/shared/subagent-route-log.mjs'
+                config:
+                  presetId: pair-coding-agent
+
               # Product providers are host-plane singletons. Copy this preset, then
               # remove `disabled` from either ordinary tool row to expose that product
               # only to agents composed from the copy.
