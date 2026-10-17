@@ -111,6 +111,8 @@ That row must exist in the profile. The shipped `dsh-base` + `dsh-web-app` stack
 
 The line names the route the child was created with, which is the route the call asked for or the one it inherited from the parent session; `unknown` appears only when the harness stated neither half. Top-level sessions print nothing.
 
+**Two upstream warnings can appear around a short-lived child** and are cosmetic: `agent-registry … agent/disposed listener threw: TypeError: Cannot read properties of undefined (reading 'catch')` (the tool chains `.catch` onto a `dispose()` that may return `undefined` — the per-Agent install path the opt-in activates) and `session-projection-cache … write for "…" failed (cache stays stale)` (a fail-soft race when a fast child's handle closes before a throttled checkpoint). `TODO.md` records the sources; the child's cached session record is in fact complete.
+
 ## Design Philosophy
 
 These presets differ from the default DSH prompt in their approach to user interaction and planning:

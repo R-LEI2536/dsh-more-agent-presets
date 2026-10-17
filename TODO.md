@@ -3,6 +3,26 @@
 Future work tracked here. Items are recorded as discovered; revisit and resolve
 or remove them once a decision lands.
 
+## 已知的上游告警（不是本插件缺陷）
+
+开了 `modelSelectionSettings`（5 个编程 preset）之后，子 agent 被销毁时终端会出现下面两行。
+2026-10-17 在 dev_web 上核实：**没有功能影响**，不要把它们当成本插件的 bug。
+
+- `agent-registry agent "<child>": agent/disposed listener threw: TypeError: Cannot read
+  properties of undefined (reading 'catch')`
+  —— `@deepseek-ai/dsh-tool-subagent` 的 per-Agent 安装路径把 `fiber.dispose().catch(...)`
+  链在一起（装好的 `lib/index.js:644`，源码 `src/index.ts:689-691`），而 cordis 的 `dispose()`
+  在某些状态下返回 `undefined`（cordis 自己处处写成 `Promise.resolve(this.dispose()).catch(...)`，
+  见 `vendor/cordis/src/fiber.ts:306`）。抛错发生在 `scopedInstalls.delete()` **之后**，而注册都落在
+  agent 自己的 ctx 上、随它一起销毁，所以没有残留。一个子 agent 可能连打一到两遍（该行有不止一处注册）。
+  上报上游时的最小修法：外面套一层 `Promise.resolve(...)`。
+- `session-projection-cache … "turn/end write for "<child>" failed (cache stays stale):
+  SessionHandleClosedError: session "<child>": flush on a closed handle"`
+  —— 短命子会话的句柄先关、节流检查点后写，是该插件自述的 fail-soft 竞态（晚到的 flush 就走这条警告，
+  见 `packages/session/session-projection-cache/src/index.ts:345-375`）。实测该子会话的投影缓存文件
+  （`~/.dsh/storages/session_projcache/sessions/<child>.json`）仍然完整：title、turnOutline、
+  sessionStats、modelSelection 都在，只丢了一次中间写。
+
 ## `chat-subagent` preset
 
 - **让 delegated child 可写、可跑命令（当前刻意只读）。** 默认 `subagentTools` 只有

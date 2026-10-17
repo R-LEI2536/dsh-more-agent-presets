@@ -111,6 +111,8 @@ Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默�
 
 这一行报的是子 agent 创建时那条路由：要么是调用点名的，要么是从父会话继承的；只有当真身两半都没给出时才显示 `unknown`。顶层会话不打这一行。
 
+**短命子 agent 收尾时可能带出两条上游告警，都是噪音**：`agent-registry … agent/disposed listener threw: TypeError: Cannot read properties of undefined (reading 'catch')`（工具把 `.catch` 链在可能返回 `undefined` 的 `dispose()` 上——正是这个开关启用的 per-Agent 安装路径），以及 `session-projection-cache … write for "…" failed (cache stays stale)`（子会话句柄先关、节流检查点后写的 fail-soft 竞态）。来源记在 `TODO.md`；实测该子会话的缓存记录是完整的。
+
 ## 设计理念
 
 这些 preset 在用户交互和规划方式上与 DSH 默认 prompt 有所不同：
