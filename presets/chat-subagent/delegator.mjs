@@ -287,6 +287,45 @@ export function apply(ctx, config) {
       : subagentAllowed.has(called) ? undefined : SUBAGENT_DENIAL
   }, warn)
 
+  // TEMPORARY diagnostic for the live `dev_web` double install (TODO.md): a new
+  // chat-subagent session prints `[E] scope Error: tool "list_subagent_models" is
+  // already registered in this scope` and ends up with no `subagent` at all.
+  // This plugin registers no tool and no restriction (point 5), so the next
+  // question is what the official per-Agent resolver sees: how many Agents one
+  // session announces and which preset each resolves to. One line per event,
+  // removed with the fix.
+  const described = (agent) => {
+    const presets = ctx.get('agentPresets')
+    const composed = presets === undefined ? 'unknown' : String(presets.composedPreset(agent.ctx))
+    return `id=${String(agent?.id)} depth=${depthOf(agent)} preset=${composed}`
+  }
+  /** Whether a name is in the Agent's OWN resolved catalog right now. */
+  const present = (agent, name) => {
+    try {
+      return ctx.tools.get(name, agent) !== undefined
+    } catch (error) {
+      return `error:${String(error)}`
+    }
+  }
+  const describeCatalog = () => {
+    const agents = ctx.get('agents')
+    if (agents === undefined) return undefined
+    return agents.list().map(agent =>
+      `${described(agent)} subagent=${String(present(agent, DELEGATOR_TOOL))} lister=${String(present(agent, ROUTE_LIST_TOOL))}`,
+    ).join(' | ')
+  }
+  const emitCatalog = (event, catalog) => {
+    if (catalog === undefined || catalog === lastCatalog) return
+    lastCatalog = catalog
+    info(`${event} ${catalog}`)
+  }
+  let lastCatalog
+  ctx.on('agent/created', ({ agent }) => {
+    lastCatalog = undefined
+    emitCatalog('agent/created', `${described(agent)} subagent=${String(present(agent, DELEGATOR_TOOL))} lister=${String(present(agent, ROUTE_LIST_TOOL))}`)
+  })
+  ctx.on('tools/change', () => emitCatalog('tools/change', describeCatalog()))
+
   /** Agents whose persona this plugin already installed. */
   const dressed = new WeakSet()
   /** agent → the disposers that undo the persona this plugin installed on it. */
