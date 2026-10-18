@@ -46,6 +46,7 @@ import {
   normalizeConfig,
   personaText,
   ROUTE_LIST_TOOL,
+  ROUTE_POLICY_KEY,
   RUN_CODE,
 } from './presets/chat-subagent/delegator.mjs'
 
@@ -115,7 +116,7 @@ function fakeSystemPrompt() {
  * returns undefined. A fake that answered `get('logger')` made a plugin logging
  * through it pass this check while printing nothing in a real session.
  */
-function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false, noPresets = false } = {}) {
+function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false, noPresets = false, routePolicy } = {}) {
   const handlers = new Map()
   const warnings = []
   const infos = []
@@ -129,6 +130,16 @@ function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false
     get(name) {
       if (name === 'agents') return { list: () => liveAgents }
       if (name === 'agentPresets') return noPresets ? undefined : { composedPreset: agentCtx => presetOf(agentCtx) }
+      // The route policy the `modelSelectionSettings` opt-in registers. `undefined`
+      // here means this build mounts no such projection at all; a stated value —
+      // including `null`, or a function that throws — models a registered unit.
+      if (name === 'sessionProjections' && routePolicy !== undefined) {
+        return {
+          stateOf: (_session, key) => key !== ROUTE_POLICY_KEY
+            ? undefined
+            : typeof routePolicy === 'function' ? routePolicy() : routePolicy,
+        }
+      }
       return undefined
     },
     tools,
@@ -274,6 +285,66 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.equal(guard({ name: 'write' }), undefined)
   assert.equal(guard({ name: 7, agent: top }), undefined)
   assert.equal(guard({ agent: top }), undefined)
+}
+
+// ── the route insurance: a Session WITH a list must name its route ───────────
+
+{
+  const routes = [{ provider: 'daseinai', model: 'gpt-6-luna' }]
+  const host = fakeHost({ routePolicy: routes })
+  apply(host.ctx, CONFIG)
+  const guard = host.seen.guards[0]
+  const top = fakeAgent({ id: 'top' })
+  const child = fakeAgent({ id: 'child', runtimeDepth: 1 })
+  const call = args => ({ name: DELEGATOR_TOOL, agent: top, arguments: args })
+  const routed = {
+    description: 'check the logs',
+    prompt: 'Find the failing step.',
+    provider: 'daseinai',
+    model: 'gpt-6-luna',
+  }
+
+  // A named route passes, with or without an effort.
+  assert.equal(guard(call(routed)), undefined)
+  assert.equal(guard(call({ ...routed, reasoning_effort: 'high' })), undefined)
+  // Omission — including half a route or a blank half — is refused, and the
+  // reason MUST name the lister: it is the only feedback a model that skipped
+  // discovery ever gets.
+  for (const args of [
+    undefined,
+    {},
+    { description: 'check the logs', prompt: 'Find the failing step.' },
+    { provider: 'daseinai' },
+    { model: 'gpt-6-luna' },
+    { provider: '', model: 'gpt-6-luna' },
+    { provider: 'daseinai', model: '   ' },
+  ]) {
+    assert.match(guard(call(args)), /list_subagent_models/, `refused: ${JSON.stringify(args)}`)
+  }
+  // The read-only lister itself is never affected, and a child cannot delegate
+  // at all, so the route rule never reaches that branch.
+  assert.equal(guard({ name: ROUTE_LIST_TOOL, agent: top }), undefined)
+  assert.match(guard({ name: DELEGATOR_TOOL, agent: child, arguments: routed }), /read-only/)
+  assert.deepEqual(host.warnings, [])
+}
+
+// The insurance is FAIL-OPEN. Without a list — the opt-in off, an empty Host
+// setting, a restored Session that recorded no policy, or a build with no
+// projection service — omission is the only way to delegate and must stay
+// allowed; a failed read must never break the call or the mount.
+{
+  const top = fakeAgent({ id: 'top' })
+  const unnamed = { name: DELEGATOR_TOOL, agent: top, arguments: { description: 'd', prompt: 'p' } }
+  for (const routePolicy of [undefined, null, []]) {
+    const host = fakeHost(routePolicy === undefined ? {} : { routePolicy })
+    apply(host.ctx, CONFIG)
+    assert.equal(host.seen.guards[0](unnamed), undefined, `omission stays allowed for ${JSON.stringify(routePolicy)}`)
+    assert.deepEqual(host.warnings, [])
+  }
+  const throwing = fakeHost({ routePolicy: () => { throw new Error('no cell') } })
+  apply(throwing.ctx, CONFIG)
+  assert.equal(throwing.seen.guards[0](unnamed), undefined)
+  assert.ok(throwing.warnings.some(m => m.includes('route policy')), 'a failed policy read is reported')
 }
 
 // ── the per-agent persona ────────────────────────────────────────────────────
