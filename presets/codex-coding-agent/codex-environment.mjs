@@ -82,7 +82,8 @@ export function apply(ctx) {
 
     const message = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+      // V4 sources are producer-owned; the retired plugin-kind wrapper is refused at encode time.
+      source: { kind: name, form: 'snapshot', sections: [{ name, text }] },
     })
     return { ...decision, messages: [...decision.messages, message] }
   })
