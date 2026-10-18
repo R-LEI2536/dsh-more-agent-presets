@@ -11,13 +11,15 @@
  * already at parity — no developer-role upgrade needed when DSH expands its
  * role set.
  *
- * Coexistence: DSH already publishes cwd via `systemPrompt.variable('cwd')`
- * (used by `prompt-sections.mjs` for the `{{cwd}}` interpolation), the
- * harness source via the `harness:source` section (order 10000), the Web
- * surface via `app:web-surface` (order 10100), and the time/timezone via the
- * `dsh-time-context` package's own `agent/pre-step` listener. None of those
- * is the model-visible input[] block; this plugin is the only one matching
- * upstream's `<environment_context>` shape.
+ * Coexistence: DSH publishes the current directory as the REQUIRED
+ * `working-directory:current` runtime CONTEXT (order `WORKING_DIRECTORY`,
+ * `@deepseek-ai/dsh-working-directory`), the harness source via the
+ * `harness:source` section (order 10000), the Web surface via
+ * `app:web-surface` (order 10100), and the time/timezone via the
+ * `dsh-time-context` package's own `agent/pre-step` listener. DSH 0.2.1
+ * deleted the `cwd` prompt variable, so nothing interpolates `{{cwd}}` any
+ * more. None of those is the model-visible input[] block; this plugin is the
+ * only one matching upstream's `<environment_context>` shape.
  *
  * Diff-driven: a module-scope `Map<SessionId, hash>` keyed by
  * `agent.session.id` (stable branded id, see
@@ -29,13 +31,16 @@
  * diff-driven gate in `codex-rs/core/src/session/mod.rs:3810-3884`).
  * `agent/disposed` clears the entry so the map does not leak across sessions.
  *
- * cwd source: `<cwd>` is read from `agent.session.header.cwd` (the cwd stamped
- * on the Session header at session creation, see
- * `packages/core/session/src/types.ts:104`), matching upstream codex's
- * session-scoped `<cwd>` semantics — not from `process.cwd()`, which is the
- * Node process's cwd and can drift from it under chdir / subagent fork / remote
- * exec. `process.cwd()` is the fallback when the Session header has no cwd
- * recorded (theoretical — the session store always sets it).
+ * cwd source: `<cwd>` is the Session's LIVE directory, read from the
+ * `workingDirectory` service (`ctx.get('workingDirectory').get(session)`, a sync
+ * projection read — `@deepseek-ai/dsh-working-directory`), matching upstream
+ * codex's session-scoped `<cwd>` semantics. DSH 0.2.1 split that value:
+ * `agent.session.header.cwd` is now only the ORIGINAL project identity /
+ * permission root stamped at creation, so `working_directory({ cd })` would
+ * leave it stale. The header is the fallback when the service is not composed
+ * (a bare deployment) and `process.cwd()` the last resort; neither is the
+ * primary source, because the Node process's cwd can drift under chdir /
+ * subagent fork / remote exec.
  */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -63,7 +68,13 @@ export function apply(ctx) {
     if (decision.kind === 'reject' || signal.aborted) return decision
 
     const sessionId = agent.session.id
-    const sessionCwd = agent.session.header.cwd ?? process.cwd()
+    // The live directory, not the creation-time project root: DSH 0.2.1 moved
+    // the header's `cwd` to identity/permission-root duty and made
+    // `working_directory({ cd })` able to change the real one.
+    const workingDirectory = ctx.get('workingDirectory')
+    const sessionCwd = workingDirectory?.get(agent.session)
+      ?? agent.session.header.cwd
+      ?? process.cwd()
     const current = stateHash(sessionCwd)
     if (lastHashBySession.get(sessionId) === current) return decision
     lastHashBySession.set(sessionId, current)
@@ -82,7 +93,8 @@ export function apply(ctx) {
 
     const message = createUserMessage({
       content: [{ type: 'text', text }],
-      source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+      // V4 sources are producer-owned; the retired plugin-kind wrapper is refused at encode time.
+      source: { kind: name, form: 'snapshot', sections: [{ name, text }] },
     })
     return { ...decision, messages: [...decision.messages, message] }
   })

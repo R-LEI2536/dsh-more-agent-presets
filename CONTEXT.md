@@ -36,7 +36,7 @@ _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
 preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。restriction 只管**继承**面：agent **自身层**注册的工具不受任何 restriction 约束（`view()` 跳过 own 层，再把它无条件叠加进可见集），own 层只能由 guard 在调用时拦。
-_Avoid_: `toolFilter`（那是 `@deepseek-ai/dsh-tool-subagent` 行的配置，只过滤子 agent 的工具）
+_Avoid_: `toolFilter`（0.2.1 起 `@deepseek-ai/dsh-tool-subagent` 已删除该配置键：子 agent 的工具集只由它所在的 preset 决定）
 
 **Catalog mask**:
 `chat-subagent` 顶层会话的目录收窄：装在该 agent **自身 scope** 上的一条 `ctx.tools.restrict({ allow: [] })`，由 **Delegator preset** 的 `delegator.mjs` 只对 depth-0 的 agent 安装。restriction 只过滤 scope **继承**来的面，所以自身层注册的 `subagent` 与 `list_subagent_models` 留下，其余 preset 行从目录里消失。它只管目录、不是强制面（拒绝调用的是 **Delegation guard**），并且必须**延后一个 macrotask** 安装与解除（多次请求合并成一次 `setTimeout(…, 0)`）：`restrict()` 会发 `tools/change`，与官方派活的 per-Agent 安装撞车，延后到创建/切换 dispatch 之外就不会重名（1.7.3 实测）。子 agent 的 scope 父节点是 preset 的 standing scope、不是父 Agent scope，所以它永远继承不到这条 mask。
@@ -48,14 +48,18 @@ _Avoid_: one-tool preset（易与 zero-tool preset 混淆）、subagent preset
 
 **Delegation guard**:
 `chat-subagent` 强制面的全名：装在 preset **standing scope** 上的一条 `ctx.tools.guard(...)`，按**调用方** agent 的 delegation depth 分流——depth 0 只放行 `subagent` 与 `list_subagent_models`（外加 PTC 表现层的 `run_code`），更深的 agent 只放行 **Subagent tool list** 与那个 lister。guard 与 restriction 有两条关键差别：guard 从**调用方**的 scope 链读取（`guardReason()` 走 `chainLayers(exec.agent)`），所以一条 standing 安装同时覆盖顶层会话与所有子 agent；而且 `guard()` 以 `notify: false` 安装，**不发 `tools/change`**，`restrict()` 则会发。后者不是风格问题：官方派活插件正是在 `tools/change` 上安装到活着的 agent 上，从 `agent/created` 同步装 restriction 会让同一个 scope 装两次，第二次重名抛错、`mount()` 不执行，会话一个派活工具都不剩（1.7.3 实测）——**Catalog mask** 靠延后一个 macrotask 绕开它。只要底层表不变，guard 不需要 reconcile；只有 persona（`deployment:persona-prefix` 段 + `suppressRuntimeContext()`）与 **Catalog mask** 仍按 agent 安装，因为只有顶层会话该拿到它们；agent 自身的注册比组合活得久，所以 persona 必须由 `tools/change` reconcile **双向**维护（装与拆），并在行卸载、agent 销毁时显式解除——guard 不需要，它随 standing scope 一起消失。
-_Avoid_: 把 **Catalog mask** 当强制面、`restrict({ allow: [] })` 写在 preset 层、`toolFilter`（只过滤子 agent）
+_Avoid_: 把 **Catalog mask** 当强制面、`restrict({ allow: [] })` 写在 preset 层、`toolFilter`（0.2.1 已删除）
 
 **Subagent tool list**:
 声明里 `subagentTools` 给出的、被派出去的子 agent 可调用的工具名白名单；**Delegation guard** 的 depth 分支照它放行。名字不再逐个探测：guard 只在调用时比对名单，没有任何行注册的名字只是不在目录里，缺失一项不会影响派活。
 _Avoid_: 工具池、`toolFilter`
 
+**Working directory context**:
+`@deepseek-ai/dsh-working-directory` 以 `required: true` 的 `working-directory:current` runtime context 提供会话的当前目录。0.2.1 起 `{{cwd}}` prompt 变量已不存在，preset 的 persona / section 文本里出现它会让 prompt 组装在请求前抛错；`session.header.cwd` 只是创建时的项目身份与权限根，会被 `working_directory({ cd })` 弄得过期——要读实时目录用 `ctx.get('workingDirectory').get(session)`。
+_Avoid_: `{{cwd}}`、把 `session.header.cwd` 当当前目录
+
 **Delegated child**:
-被 `subagent` 工具创建、执行任务的子 agent：它带着自己的 delegation depth 加入父会话的同一个 preset，因此继承 preset 的工具行，并落在 **Delegation guard** 的子分支上（只放行 **Subagent tool list**）；顶层会话的 persona、runtime-context suppression 与 **Catalog mask** 都不会装到它身上（它的 scope 父节点是 preset 的 standing scope）。
+被 `subagent` 工具创建、执行任务的子 agent：它带着自己的 delegation depth 加入父会话的同一个 preset，因此继承 preset 的工具行，并落在 **Delegation guard** 的子分支上（只放行 **Subagent tool list**）；顶层会话的 persona、runtime-context suppression 与 **Catalog mask** 都不会装到它身上（它的 scope 父节点是 preset 的 standing scope）。0.2.1 起子 agent 的 persona **只能**来自它所在的 preset（委派行的 `persona`/`toolFilter` 配置会被直接拒绝），所以 `chat-subagent` 用一条 preset 平面的 `@deepseek-ai/dsh-persona` 行提供它，并且**不设** `agentPreset`——不设才会走 `composeFrom` 加入父 preset，从而同时保住只读工具行与那条 guard。
 _Avoid_: worker（内部叫法，不是产品术语）
 
 **Subagent model selection**:

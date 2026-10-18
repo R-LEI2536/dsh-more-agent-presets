@@ -83,7 +83,7 @@ export function apply(ctx) {
 
   // Plane 2 — the agent's own registrations, which the restriction above cannot
   // reach (see the header). Optional API: the declared floor is
-  // `^0.2.0-rc.1`, so a build without `guard()` must degrade loudly rather than
+  // `^0.2.1-rc.1`, so a build without `guard()` must degrade loudly rather than
   // fail the preset composition.
   if (typeof ctx.tools.guard !== 'function') {
     // `ctx.logger`, not `ctx.get('logger')`: cordis assigns the logger in the

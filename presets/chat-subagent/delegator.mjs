@@ -21,18 +21,21 @@
  * therefore reaches every agent of the preset — INCLUDING delegated children,
  * because a child joins its parent's preset rather than a fresh one:
  * `applyChildComposition` calls `agentPresets.composeFrom(childCtx, parent.ctx)`
- * (`packages/subagent/subagent/src/child-agent.ts:200-219`), which parents the
- * child's scope to the same standing scope. A standing `allow: []` would thus
- * leave the child with no tool at all, and a restriction can only
- * narrow — the child's own `toolFilter` cannot widen what an ancestor masked.
+ * whenever no `agentPreset` is selected
+ * (`packages/subagent/subagent/src/child-agent.ts:186-202`, DSH 0.2.1), which
+ * parents the child's scope to the same standing scope. A standing `allow: []`
+ * would thus leave the child with no tool at all, and a restriction can only
+ * narrow — nothing a child composes can widen what an ancestor masked.
  * That rules out a preset-plane RESTRICTION, not a preset-plane GUARD: a guard is
  * read per CALLING agent, so one standing install can refuse a root what it
  * admits a child (point 6).
  *
  * (2) A restriction registered on ONE AGENT's own scope does not reach a
  * delegated child, because the child's scope parent is the standing scope, not
- * the parent Agent's scope (`standingMountFor()` matches the agent's
- * `scopeParentOf` against a mount key — `agent-preset-registry/src/mount.ts:119-127`).
+ * the parent Agent's scope (the registry resolves an agent's standing mount by
+ * matching its `scopeParentOf` against a mount key —
+ * `agent-preset-registry/src/mount.ts:119-127`; DSH 0.2.1 no longer exports the
+ * `standingMountFor()` helper that used to name this lookup).
  * `ToolRuntime.view()` reads a scope's own restrictions for the layer it
  * INHERITS and overlays its own registrations unfiltered
  * (`packages/core/tools/src/index.ts:1178-1209`), and `tools.restrict()` refuses
@@ -237,7 +240,7 @@ export function normalizeConfig(config, warn) {
  */
 export function installGuard(tools, decide, warn) {
   if (typeof tools.guard !== 'function') {
-    // Declared floor is ^0.2.0-rc.1; a build without `guard()` must degrade
+    // Declared floor is ^0.2.1-rc.1; a build without `guard()` must degrade
     // loudly instead of failing the preset's mount (same rule as
     // `presets/chat-agent/no-tools.mjs`).
     warn('this DSH build has no tools.guard(); this preset cannot refuse a call it does not allow')

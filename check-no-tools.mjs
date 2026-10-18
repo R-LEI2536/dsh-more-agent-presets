@@ -43,7 +43,7 @@ assert.equal(typeof reason, 'string')
 assert.ok(reason.length > 0)
 assert.deepEqual(current.seen.warnings, [])
 
-// A build without `tools.guard()` (declared floor is `^0.2.0-rc.1`) must warn,
+// A build without `tools.guard()` (declared floor is `^0.2.1-rc.1`) must warn,
 // not throw, and must still mask the inherited plane.
 const legacy = fakeCtx({ withGuard: false })
 apply(legacy.ctx)

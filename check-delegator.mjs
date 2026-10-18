@@ -29,6 +29,12 @@
  * outlives the composition that asked for it), and the guard must NOT be — it
  * belongs to the standing scope and goes away with the composition.
  *
+ * A child's OWN persona is not this plugin's: DSH 0.2.1 rejects a `persona` on
+ * the delegation row, so `presets/chat-subagent.patch.yml` carries it as a
+ * preset-plane `@deepseek-ai/dsh-persona` row, which reaches the child because
+ * the child composes this preset. The declaration is pinned at the end of this
+ * file.
+ *
  * Not in `files`, so it never ships.
  */
 
@@ -660,8 +666,25 @@ assert.equal(configuredId, declaredId)
 const toolsBlock = /^\s+subagentTools:\n((?:\s+- \S+\n)+)/m.exec(patch)?.[1] ?? ''
 assert.deepEqual([...toolsBlock.matchAll(/^\s+- (\S+)$/gm)].map(match => match[1]), SUBAGENT_TOOLS)
 assert.ok(patch.includes('provider: spawn'))
-assert.ok(patch.includes('enableRunInBackground: false'))
+// DSH 0.2.1 dropped `backgroundMode`/`enableRunInBackground` from
+// `@deepseek-ai/dsh-tool-subagent`'s schema and makes `apply()` THROW on
+// `persona`/`toolFilter`, so a row carrying one fails the whole preset. Match
+// only row lines — this file's own header names all four in prose.
+assert.doesNotMatch(patch, /^\s+backgroundMode:/m)
+assert.doesNotMatch(patch, /^\s+enableRunInBackground:/m)
+assert.doesNotMatch(patch, /^\s+toolFilter:/m)
+assert.doesNotMatch(patch, /^\s+persona:/m)
 assert.ok(patch.includes('maxDepth: 1'))
+// The child's persona moved off the delegation row onto a preset-plane
+// `@deepseek-ai/dsh-persona` row, which is what reaches a child because a child
+// composes THIS preset. Both halves are pinned: the row must exist, and no
+// `agentPreset` may appear (selecting another preset would take the child off
+// this preset's guard and read-only rows).
+assert.equal(
+  patch.match(/^[ \t]+- id: subagent-persona\n[ \t]+name: '@deepseek-ai\/dsh-persona'\n/gm)?.length,
+  1,
+)
+assert.doesNotMatch(patch, /^\s+agentPreset:/m, 'a delegated child must keep joining this preset')
 // The opt-in is what gives the root session a model to name and a lister to read
 // it from; without it the guard's allow-list is right but the capability is gone.
 // The header comment mentions the key too, so the count is pinned to the row.

@@ -59,7 +59,7 @@
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
-能力就是**一个能动手的工具**的聊天助手：`subagent`——外加模型选择开关注册的只读 `list_subagent_models`，它只报告本会话可以点名的路由。顶层会话的工具**目录里只有这两个名字**：一条 depth-0 目录 mask（`ctx.tools.restrict({ allow: [] })`，装在 Agent 自身 scope 上，由 `presets/chat-subagent/delegator.mjs` 安装）把 preset 继承来的行全部藏起来；而 restriction 从不过滤 agent 自身层，这两个派活工具恰好注册在那里。藏起来不等于强制：同插件在 preset 的 standing scope 上装**一条 guard**（`ctx.tools.guard(...)`），这两个名字之外的所有调用一律拒绝。mask 在 Agent scope 上，所以被派出去的子 agent 不会继承它（子 agent 的 scope 父节点是 preset 的 standing scope）；guard 则按**调用方** agent 的 scope 链取，所以同一条 standing 安装同时覆盖顶层会话和每个子 agent，由 delegation depth 决定放行哪些名字。mask 刻意晚一个 macrotask 安装（`agent/created` 之后、切换之后），离场时同样延后解除：`restrict()` 会发 `tools/change`，`guard()` 不会，而官方派活插件正是在这个事件上安装到活着的 agent 上——从 `agent/created` 同步装 agent-scope restriction 让同一个 scope 装了两次，第二次抛 `tool "list_subagent_models" is already registered in this scope`，它的 `install()` 在 `mount()` 之前中止，会话**一个派活工具都不剩**（1.7.3 实测）。因此该会话自己不能产生动作；它调用一次 `subagent`，再依据返回的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）那次调用是前台的（`enableRunInBackground: false` 让 `run_in_background` 参数根本不出现在 schema 里），走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+能力就是**一个能动手的工具**的聊天助手：`subagent`——外加模型选择开关注册的只读 `list_subagent_models`，它只报告本会话可以点名的路由。顶层会话的工具**目录里只有这两个名字**：一条 depth-0 目录 mask（`ctx.tools.restrict({ allow: [] })`，装在 Agent 自身 scope 上，由 `presets/chat-subagent/delegator.mjs` 安装）把 preset 继承来的行全部藏起来；而 restriction 从不过滤 agent 自身层，这两个派活工具恰好注册在那里。藏起来不等于强制：同插件在 preset 的 standing scope 上装**一条 guard**（`ctx.tools.guard(...)`），这两个名字之外的所有调用一律拒绝。mask 在 Agent scope 上，所以被派出去的子 agent 不会继承它（子 agent 的 scope 父节点是 preset 的 standing scope）；guard 则按**调用方** agent 的 scope 链取，所以同一条 standing 安装同时覆盖顶层会话和每个子 agent，由 delegation depth 决定放行哪些名字。mask 刻意晚一个 macrotask 安装（`agent/created` 之后、切换之后），离场时同样延后解除：`restrict()` 会发 `tools/change`，`guard()` 不会，而官方派活插件正是在这个事件上安装到活着的 agent 上——从 `agent/created` 同步装 agent-scope restriction 让同一个 scope 装了两次，第二次抛 `tool "list_subagent_models" is already registered in this scope`，它的 `install()` 在 `mount()` 之前中止，会话**一个派活工具都不剩**（1.7.3 实测）。因此该会话自己不能产生动作；它调用一次 `subagent`，再依据运行时以完成通知送达的报告回复用户。（唯一残留的边界是下面提到的 own-plane Team 工具。）DSH 0.2.1 直接删除了那两个背景键，所以**每次**派活都是异步的受管激活：调用立刻返回 `{ kind: 'activation', subagentId }`，子 agent 的终答随后以完成通知送达；它走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
 
 **真正干活的是被派出去的子 agent，它只读。** delegated child 会**加入父会话的同一个 preset**，因此继承同一批行，也继承同一条 guard；约束它的是 guard 的 depth 分支：子 agent 只能调用声明里 `subagentTools` 名单——默认 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`——其余一律拒绝。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——现在已经不做探测：guard 按声明名单判定，没有任何行注册的名字只是不在目录里。mask 只装在父 Agent 的 scope、绝不装在 preset 层，原因正是这一点：preset 层的 restriction 同样在子 agent 的 scope 链上（它加入的就是同一个 preset），而 restriction 只能收窄，子 agent 解不开。
 
@@ -135,7 +135,7 @@ Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.0-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在）。0.1.7-rc.x 宿主会通过 peer 兼容门整包跳过本插件，请先升级宿主。
+- DeepSeek Harness **0.2.1-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在），并在 `engines.dsh` 里钉住这条下限，因此更旧的宿主会通过兼容门整包跳过本插件，请先升级宿主。
 - 子 agent 模型选择这一项需要 Host 挂 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂这一行；缺它会让开了该开关的 preset（5 个编程 preset 与 `chat-subagent`）整块挂载失败。
 
 ## 安装

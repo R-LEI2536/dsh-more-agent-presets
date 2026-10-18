@@ -5,6 +5,13 @@ or remove them once a decision lands.
 
 ## 已知的上游告警（不是本插件缺陷）
 
+> **2026-10-19（1.8.0，目标 DSH 0.2.1-rc.2）：本节所有实测都发生在 0.2.0-rc.2 上，结论需在新宿主上复测后才可作废。**
+> 0.2.1 重写了两处与本节直接相关的代码：`@deepseek-ai/dsh-tool-subagent` 的 per-Agent 安装路径
+> （`scopedInstalls` / `installScoped` / `removeScoped`，且 `apply()` 现在拒绝 `persona`/`toolFilter`），以及派活的
+> 生命周期（改为受管激活）。下面记录的 `fiber.dispose().catch(...)` 告警、`scopedInstalls` 缓存失败安装、以及
+> 「切换 preset 丢工具」的绕法都以旧实现为据——**绕法本身保留**（行位置由 `check-subagent-model-selection.mjs` 钉死），
+> 但需在 0.2.1 上重测；上游修好后可把该行还原为顶层行。
+
 开了 `modelSelectionSettings`（5 个编程 preset + `chat-subagent`）之后，子 agent 被销毁时终端会出现下面两行。
 2026-10-17 在 dev_web 上核实：**没有功能影响**，不要把它们当成本插件的 bug。
 

@@ -61,13 +61,17 @@
 # THE ONE TOOL THAT ACTS. `@deepseek-ai/dsh-tool-subagent` mounts one
 # model-facing delegation tool per instance, on the `spawn` provider (a fresh
 # child that never sees this conversation, so a task prompt must stand alone).
-# `enableRunInBackground: false` removes `run_in_background` from the schema
-# entirely, so the single call waits for the child and returns its report — a
-# background start would need `job_output`/`send_message` to collect, and those
-# are second tools this preset does not have. `backgroundMode: one-shot` is the
-# matching policy. `maxDepth: 1` states the recursion budget outright: the child
-# may not delegate again (the guard's child branch keeps only the read-only names
-# and does not include `subagent`).
+# DSH 0.2.1 deleted `backgroundMode` and `enableRunInBackground` outright: every
+# delegation is a MANAGED ACTIVATION (`ctx.subagents.startActivation`), so the
+# call returns `{ kind: 'activation', subagentId }` at once instead of the
+# child's report, there is no `run_in_background` parameter left to remove, and
+# the runtime delivers the child's final answer to THIS session as a settlement
+# notice (`@deepseek-ai/dsh-subagent` `src/manager.ts`, `notifySettlement` →
+# `createSettlementMessage`). Nothing collects a child through
+# `job_output`/`job_kill` any more — those remain ordinary background-JOB tools.
+# `maxDepth: 1` states the recursion budget outright: the child may not delegate
+# again (the guard's child branch keeps only the read-only names and does not
+# include `subagent`).
 #
 # WHY `modelSelectionSettings: true` HERE TOO. With the flag on, the top-level
 # session gains the optional `provider`/`model`/`reasoning_effort` parameters on
@@ -103,8 +107,23 @@
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
 # `presets/shared/model-persona.mjs`) plus the delegation note it reads from
 # `presets/chat-subagent/delegation-note.md`. One table, one note, each in one
-# file. `persona` below is the CHILD's own persona — a section in the child's
-# scope alone, shadowing the deployment persona there.
+# file.
+#
+# The CHILD's persona moved OFF the delegation row in the 0.2.1 upgrade:
+# `@deepseek-ai/dsh-tool-subagent` now REJECTS a `persona` (and `toolFilter`)
+# config with a hard throw, because a child's identity and tool set come only
+# from the Agent Preset it composes. `subagent-persona` below is that
+# preset-plane row. Omission of `agentPreset` is what makes it reach the child:
+# the provider calls `agentPresets.composeFrom(childCtx, parent.ctx)`, so the
+# child joins THIS preset's standing scope and keeps both the read-only tool rows
+# and the standing guard, while the preset-plane `deployment:persona-prefix`
+# lands in its prompt. The root session is unaffected: the `delegator` row
+# registers the SAME section name on each depth-0 AGENT's own scope with
+# `complete: true`, and a nearer scope wins a section name
+# (`ScopedLayers.merge`, farthest ancestor first), so the root keeps the
+# per-model persona + delegation note and only a child reads this row. The one
+# deliberate cost: this row's default empty `suffix` also shadows the
+# deployment's persona suffix for the child scope.
 #
 # A pure `insert` with no `!!js` expression: nothing here is platform- or
 # environment-conditional.
@@ -138,6 +157,20 @@
                 - todo_write
                 - job_list
 
+          # The CHILD's own persona, as a preset-plane row (0.2.1: the
+          # delegation row may no longer carry one). It shadows the deployment
+          # persona for every scope of this preset except a depth-0 agent, whose
+          # `delegator` section wins the name. See "The CHILD's persona moved OFF
+          # the delegation row" in this file's header.
+          - id: subagent-persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: >-
+                You are a delegated read-only subagent of a chat session. Work only through the tools
+                in your catalog, keep the investigation tight, and answer with a concise report the
+                delegating agent can act on: what you checked, what you found, and anything you could
+                not determine. You cannot modify files, run commands, or delegate further.
+
           # The one model-facing tool that acts (header). It sits inside a
           # group on purpose: see "WHY THE DELEGATION ROW IS INSIDE A GROUP".
           - id: delegation
@@ -151,19 +184,12 @@
                 config:
                   provider: spawn
                   toolName: subagent
-                  backgroundMode: one-shot
-                  enableRunInBackground: false
                   maxDepth: 1
                   # Authorized routes come from the Host's
                   # `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row,
                   # which the profile must mount: without it this row fails and the
                   # WHOLE preset reports a load failure.
                   modelSelectionSettings: true
-                  persona: >-
-                    You are a delegated read-only subagent of a chat session. Work only through the tools
-                    in your catalog, keep the investigation tight, and answer with a concise report the
-                    delegating agent can act on: what you checked, what you found, and anything you could
-                    not determine. You cannot modify files, run commands, or delegate further.
 
           # The child's tool sources. The depth-0 mask hides them from the
           # top-level catalog; the guard also refuses a call to one, so a hidden

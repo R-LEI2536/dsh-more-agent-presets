@@ -1,4 +1,4 @@
-# dsh-more-agent-presets — declarative agent preset bundle for DSH 0.2.0-rc.1+.
+# dsh-more-agent-presets — declarative agent preset bundle for DSH 0.2.1-rc.1+.
 #
 # This file is the bundle's first patch layer. It declares the bundle's OWN
 # loader row; the six agent presets follow in the ordered patch files listed in

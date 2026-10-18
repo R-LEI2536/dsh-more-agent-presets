@@ -21,7 +21,9 @@
           # ── identity ────────────────────────────────────────────────────────────────
 
           # The preset's own persona, shadowing the deployment default for this agent.
-          # `{{model}}` and `{{cwd}}` resolve from the agent's own route and workspace.
+          # `{{model}}` resolves from the agent's own route. The current directory is
+          # not a prompt variable any more: DSH 0.2.1 removed `{{cwd}}`, and the
+          # required `working-directory:current` runtime context carries it instead.
           - id: persona
             name: '@deepseek-ai/dsh-persona'
             config:
@@ -229,7 +231,6 @@
                     # Environment Information
                     Here is useful information about the environment you are running in:
                     <env>
-                    Working directory: {{cwd}}
                     Platform: {{platform}}
                     OS Version: {{os_version}}
                     Today's date: {{today_date}}
@@ -477,14 +478,12 @@
                   # Host-owned opt-in: the model may name provider/model from the
                   # authorized list; omitting them still inherits the parent route.
                   modelSelectionSettings: true
-                  backgroundMode: continuable
 
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: fork
                   toolName: subagent_fork
-                  backgroundMode: continuable
 
               # One terminal line per delegated child: `subagent <id> route
               # <provider>/<model>`. Nothing else reports which model a child
@@ -503,7 +502,6 @@
                 config:
                   provider: codex
                   toolName: subagent_codex
-                  enableRunInBackground: false
                   maxDepth: provider-managed
 
               - id: tool-subagent-claude-code
@@ -512,7 +510,6 @@
                 config:
                   provider: claude-code
                   toolName: subagent_claude_code
-                  enableRunInBackground: false
                   maxDepth: provider-managed
 
               - id: workflow-ptc
