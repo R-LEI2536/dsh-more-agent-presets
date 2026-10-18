@@ -6,30 +6,40 @@
 # carry the task out — plus the read-only `list_subagent_models` the
 # `modelSelectionSettings` opt-in registers, which only reports the routes the
 # session may name. The delegated subagent is a real agent with a real
-# (read-only) tool set; the top-level session is the delegator. Its CATALOG is
-# this whole preset: the rows below are visible to it, and the guard refuses
-# every call except those two names.
+# (read-only) tool set; the top-level session is the delegator. Its CATALOG holds
+# exactly those two names: a depth-0 catalog MASK hides the preset's inherited
+# rows from it, and the guard refuses every call outside the two.
 #
-# WHY THERE IS NO TOOL RESTRICTION HERE, in two steps. The obvious shape — a
-# preset-plane `ctx.tools.restrict({ allow: [] })` next to these rows — is wrong,
-# and silently so: a delegated child JOINS ITS PARENT'S PRESET
-# (`applyChildComposition` → `agentPresets.composeFrom(childCtx, parent.ctx)`,
-# `packages/subagent/subagent/src/child-agent.ts:200-219`), and the standing
-# scope's restriction is on the child's chain too, so the child would inherit
-# the same one-tool mask and the delegation would accomplish nothing. A
-# restriction can only narrow, so the child's own `toolFilter` cannot undo it.
-# The per-agent shape is wrong too, and that one is measured: `restrict()`
-# notifies `tools/change` where `tools.guard()` does not, and the official
-# delegation plugin installs into a live Agent on exactly that event — so an
-# agent-scope restriction installed from `agent/created` gave one scope two
-# installs, the second threw `tool "list_subagent_models" is already registered
-# in this scope`, its `install()` aborted before `mount()`, and the session got
-# NO delegation tool at all (1.7.3, live on `dev_web`). This preset therefore
-# installs a GUARD and no restriction: `delegator.mjs` puts one guard on this
-# preset's standing plane and decides per CALLING agent, so the root session is
-# refused everything but `subagent` + `list_subagent_models`, and a delegated
-# child is refused everything but its declared read-only names. `delegator.mjs`
-# carries the mechanism with source pointers.
+# WHY NO RESTRICTION ON THE PRESET PLANE, AND WHY THE MASK IS ON THE AGENT. The
+# obvious shape — a preset-plane `ctx.tools.restrict({ allow: [] })` next to
+# these rows — is wrong, and silently so: a delegated child JOINS ITS PARENT'S
+# PRESET (`applyChildComposition` → `agentPresets.composeFrom(childCtx,
+# parent.ctx)`, `packages/subagent/subagent/src/child-agent.ts:200-219`), and
+# the standing scope's restriction is on the child's chain too, so the child
+# would inherit the same empty catalog and the delegation would accomplish
+# nothing. A restriction can only narrow, so the child's own `toolFilter`
+# cannot undo it. The mask therefore lives on ONE agent's OWN scope and only at
+# depth 0 (`delegator.mjs` point 5): `ToolRuntime.view()` filters only the
+# surface a scope INHERITS, so that scope's own-layer `subagent` and
+# `list_subagent_models` stay visible, and a delegated child never sees the mask
+# because its scope parent is the standing scope, not the parent Agent's scope
+# (`agent-preset-registry/src/mount.ts:119-127`). It is a CATALOG mask, not
+# enforcement: `restrict()` hides names, and the standing GUARD (point 6)
+# refuses every call outside the two. `delegator.mjs` carries the mechanism with
+# source pointers.
+#
+# WHY THE MASK INSTALLS ONE MACROTASK LATE. Measured, 1.7.3 live on `dev_web`:
+# `restrict()` notifies `tools/change`, and the official delegation plugin
+# installs into a live Agent on exactly that event — an agent-scope restriction
+# installed synchronously from `agent/created` gave one scope two installs, the
+# second threw `tool "list_subagent_models" is already registered in this
+# scope`, its `install()` aborted before `mount()`, and the session got NO
+# delegation tool at all. The mask is therefore coalesced into one
+# `setTimeout(..., 0)` flush, so `restrict()`'s notification never lands inside
+# the creation or switch dispatch that asked for it; lifting is deferred the
+# same way, so leaving the preset restores the rows. That flush runs one
+# macrotask after the dispatch, which is why a catalog read taken inside the
+# same tick as `sessionController.create` still shows the inherited rows.
 #
 # WHY THESE TOOL ROWS. On the `web` profile the host plane's model-facing rows
 # are all disabled (`@deepseek-ai/dsh-web-app` `cordis.patch.yml:430-556`), so
@@ -64,10 +74,11 @@
 # `subagent`, and `list_subagent_models` to read the Host's authorized routes —
 # so a chat session can name the child's model like the five coding presets do.
 # The flag is also a row-level switch on WHERE the tool registers: it moves from
-# this preset's standing plane to each Agent's OWN layer, which is precisely the
-# plane no restriction reaches — another reason the enforcement here is a guard
-# rather than a mask (see above). The five coding presets keep the flag too, so
-# the only difference is that this preset may CALL one of the tools it lists.
+# this preset's standing plane to each Agent's OWN layer — precisely the layer a
+# restriction never filters, which is what keeps both delegation names in the
+# masked catalog and is why the mask may be `allow: []`. The five coding presets
+# keep the flag too, so the only difference is that this preset may CALL one of
+# the tools it lists.
 #
 # WHY THE DELEGATION ROW IS INSIDE A `cordis:group`. Measured, 2026-10-18: a
 # preset switch is `agentPresets.select` → `recompose` (a scope rebind plus ONE
@@ -104,12 +115,13 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "顶层只调用 subagent 干活（可为子 agent 指定模型）；目录里其他工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "顶层目录只有 subagent 与 list_subagent_models（可为子 agent 指定模型）；其余工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
         plugins:
-          # The delegation guard plus the delegator persona. `presetId` must equal
-          # this declaration's `id` (it is what tells the plugin which live agents
-          # belong to this preset during `tools/change` reconciliation);
-          # `subagentTools` is the single source of the child's read-only list.
+          # The delegation guard, the depth-0 catalog mask and the delegator
+          # persona. `presetId` must equal this declaration's `id` (it is what
+          # tells the plugin which live agents belong to this preset during
+          # `tools/change` reconciliation); `subagentTools` is the single source
+          # of the child's read-only list.
           # An optional `delegationNote` here would REPLACE the shipped
           # `delegation-note.md` for this preset; the shipped declaration sets
           # neither, so the file is what the session's prompt ends with.
@@ -153,8 +165,9 @@
                     delegating agent can act on: what you checked, what you found, and anything you could
                     not determine. You cannot modify files, run commands, or delegate further.
 
-          # The child's tool sources. They are visible in the top-level session's
-          # catalog too, and refused there by the guard.
+          # The child's tool sources. The depth-0 mask hides them from the
+          # top-level catalog; the guard also refuses a call to one, so a hidden
+          # name can never act.
           - id: tool-fs
             name: '@deepseek-ai/dsh-tool-fs'
           - id: tool-fs-search

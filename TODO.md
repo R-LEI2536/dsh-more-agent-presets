@@ -31,7 +31,7 @@ or remove them once a decision lands.
   - 在 `presets/chat-subagent.patch.yml` 里挂上工具行：`tool-bash`（win32 上是 `tool-pwsh`）；
     `write`/`edit` 已经随 `tool-fs` 的 `read` 一起注册，行本身不用改；
   - 把名字加进 `delegator` 行的 `config.subagentTools` —— 这份名单就是 guard 给子 agent 的白名单；没有任何行注册的名字
-    只是不在目录里，不会像旧实现那样触发降级或警告（`restrict()` 已不再使用）。真正决定"能不能用"的是**挂没挂那一行**；
+    只是不在目录里，不会像旧实现那样触发降级或警告。真正决定"能不能用"的是**挂没挂那一行**；
   - 改 `presets/chat-subagent/delegation-note.md`（顶层会话系统提示词里那一段；`delegator` 行也可以用
     `config.delegationNote` 覆盖它）：它现在写着"子 agent 只读、不能改任何东西、不能跑命令"。不改这一句，
     顶层会以为活干不了而把请求推掉，尽管子 agent 已经能写能跑（README 的覆盖说明里也提了这一条）。
@@ -73,9 +73,11 @@ or remove them once a decision lands.
     的工具，开新会话即可。行位置由 `check-subagent-model-selection.mjs` 钉死，不要移回顶层。
   - 上游真修法（未提交，最终解）：安装失败时不要登记 fiber，让紧随其后的 `tools/change`（旧 fiber 拆除时必然会发）触发重试；
     顺带把同函数 `removeScoped` 里的 `void fiber.dispose().catch(...)` 包成 `Promise.resolve(...)`（见上方已知告警）。
-- **我们的强制面不是这个缺陷的原因。** 这个 preset 一条 restriction 都不装、创建窗口里本插件零 `tools/change`（强制面是
-  standing guard），上面这条是官方 per-Agent 安装自己的顺序问题，与我们的注册无关；1.7.6 之前误判为“无法规避”，现在用
-  行位置规避（上游修好后可还原为顶层行）。5 个编程 preset 只是恰好在该轮 dispatch 里“拆在前、装在後”而没撞上。
+- **我们的强制面不是这个缺陷的原因。** 强制面是 standing guard（`guard()` 不发 `tools/change`）；这条缺陷是官方 per-Agent
+  安装自己的顺序问题，与我们的 guard 无关。**唯一会发 `tools/change` 的是 1.7.7 起加在 Agent 自身 scope 上的 depth-0 目录
+  mask（`restrict({ allow: [] })`），所以它刻意延后一个 macrotask 执行**，创建/切换 dispatch 里不产生任何本插件的
+  `tools/change`；1.7.6 之前误判为“无法规避”，现在用行位置规避（上游修好后可还原为顶层行）。5 个编程 preset 只是恰好在该轮
+  dispatch 里“拆在前、装在後”而没撞上。
 - **可选的整体回退**：删掉 6 个 preset spawn 行的 `modelSelectionSettings` 键（各一行）即可让所有 preset 都不会撞名，
   代价是失去路由参数与 `list_subagent_models`；`chat-subagent` 因此暂时不可用，是否回退由使用方决定。
 

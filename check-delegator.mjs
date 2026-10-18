@@ -3,23 +3,29 @@
  *
  *   node check-delegator.mjs
  *
- * Enforcement is ONE guard on the preset's STANDING scope, and NO tool
- * restriction anywhere. Both halves are load-bearing:
+ * Enforcement is ONE guard on the preset's STANDING scope. The catalog is
+ * narrowed by ONE per-agent `restrict({ allow: [] })` on a depth-0 agent's own
+ * scope; both halves are load-bearing:
  *
- * - A restriction would have to be per agent (a standing one is on a delegated
- *   child's chain too, and a child joins its parent's preset), and `restrict()`
- *   notifies `tools/change` where `tools.guard()` does not — which is how 1.7.3
- *   ended with two installs into one agent scope, a duplicate
+ * - A restriction must be per AGENT, never preset-plane: a standing one is on a
+ *   delegated child's chain too (a child joins its parent's preset), so it would
+ *   strip the rows the child works through. This file therefore refuses to serve
+ *   `restrict()` on the standing scope: that regression fails here, not live.
+ * - A restriction on the ROOT agent's own scope is off the child's chain and
+ *   filters only what that scope INHERITS, so the own-layer `subagent` and
+ *   `list_subagent_models` stay visible.
+ * - `restrict()` notifies `tools/change` where `tools.guard()` does not — which
+ *   is how 1.7.3 ended with two installs into one agent scope, a duplicate
  *   `list_subagent_models`, and a session that had no delegation tool at all.
- *   This file therefore refuses to serve `restrict()` at all: any regression
- *   that reintroduces one fails here instead of in a live profile.
+ *   The mask is therefore installed one macrotask after the dispatch, which every
+ *   mask test below pins with `await tick()`.
  * - A guard is read from the CALLING agent's chain, so the standing install
  *   covers the root session and every child, and the delegation depth decides
  *   which names pass. That branch is what keeps the child read-only.
  *
- * The persona is the other half and IS per agent: the root session gets this
- * preset's whole prompt, a child only gets its route logged. It must be lifted
- * when an agent stops composing this preset (an agent-scope registration
+ * The persona is also per agent: the root session gets this preset's whole
+ * prompt, a child only gets its route logged. Persona and mask must both be
+ * lifted when an agent stops composing this preset (an agent-scope registration
  * outlives the composition that asked for it), and the guard must NOT be — it
  * belongs to the standing scope and goes away with the composition.
  *
@@ -49,9 +55,9 @@ const SUBAGENT_TOOLS = ['read', 'glob', 'grep', 'read_image', 'list_directory', 
 const ORDERS = { DEPLOYMENT_PERSONA_PREFIX: 100 }
 
 /**
- * A tools service that mirrors the two registry facts this plugin depends on: a
- * guard is a callable the registry keeps until its disposer runs, and a
- * restriction is NOT something this plugin may use any more.
+ * The STANDING tools service. A guard is a callable the registry keeps until its
+ * disposer runs; a restriction is never installed here — a preset-plane mask
+ * would reach every delegated child of the preset and strip its working rows.
  * @param options - the disposers the owning context collects, and a build flag.
  * @returns the service and what it recorded.
  */
@@ -60,7 +66,7 @@ function fakeTools({ effects, noGuard = false } = {}) {
   const tools = {
     restrict() {
       seen.restrictCalls++
-      throw new Error('the delegator must not restrict tools: the standing guard is the whole enforcement')
+      throw new Error('the delegator must not restrict the standing scope: that mask would strip every child')
     },
   }
   if (!noGuard) {
@@ -109,7 +115,7 @@ function fakeSystemPrompt() {
  * returns undefined. A fake that answered `get('logger')` made a plugin logging
  * through it pass this check while printing nothing in a real session.
  */
-function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false } = {}) {
+function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false, noPresets = false } = {}) {
   const handlers = new Map()
   const warnings = []
   const infos = []
@@ -122,7 +128,7 @@ function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false
     effect(callback) { const dispose = callback(); effects.push(dispose); return dispose },
     get(name) {
       if (name === 'agents') return { list: () => liveAgents }
-      if (name === 'agentPresets') return { composedPreset: agentCtx => presetOf(agentCtx) }
+      if (name === 'agentPresets') return noPresets ? undefined : { composedPreset: agentCtx => presetOf(agentCtx) }
       return undefined
     },
     tools,
@@ -138,9 +144,33 @@ function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false
   }
 }
 
+/**
+ * One agent's OWN tools service. The depth-0 catalog mask is the only restriction
+ * this plugin installs per agent, so it is legal and recorded here; a per-agent
+ * guard is not — the standing guard is the whole enforcement — so `guard()` stays
+ * absent and any attempt to install one fails loudly.
+ * @returns the service and what it recorded.
+ */
+function fakeAgentTools() {
+  const seen = { guards: [], restrictions: [], restrictCalls: 0 }
+  return {
+    tools: {
+      restrict(filter) {
+        seen.restrictCalls++
+        seen.restrictions.push(filter)
+        return () => {
+          const index = seen.restrictions.indexOf(filter)
+          if (index >= 0) seen.restrictions.splice(index, 1)
+        }
+      },
+    },
+    seen,
+  }
+}
+
 /** One agent of a known depth, with the per-agent scope nothing here may touch. */
 function fakeAgent({ id = 'agent', runtimeDepth, headerDepth, model = 'gpt-6-luna', provider } = {}) {
-  const { tools, seen } = fakeTools()
+  const { tools, seen } = fakeAgentTools()
   const systemPrompt = fakeSystemPrompt()
   return {
     id,
@@ -153,6 +183,9 @@ function fakeAgent({ id = 'agent', runtimeDepth, headerDepth, model = 'gpt-6-lun
 }
 
 const CONFIG = { presetId: 'chat-subagent', subagentTools: SUBAGENT_TOOLS }
+
+/** The catalog mask is deferred one macrotask on purpose; tests cross it here. */
+const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 
 // ── depth ────────────────────────────────────────────────────────────────────
 
@@ -246,9 +279,11 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
 // ── the per-agent persona ────────────────────────────────────────────────────
 
 {
-  const host = fakeHost()
+  const live = []
+  const host = fakeHost({ liveAgents: live })
   apply(host.ctx, CONFIG)
   const agent = fakeAgent({ id: 'top' })
+  live.push(agent)
   host.fire('agent/created', { agent })
 
   assert.equal(agent.systemPrompt.suppressed, true)
@@ -268,16 +303,24 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // needs its own tool guidance and the delegation-scope context. It gets one
   // diagnostic line instead.
   const worker = fakeAgent({ id: 'worker', runtimeDepth: 1 })
+  live.push(worker)
   host.fire('agent/created', { agent: worker })
   assert.equal(worker.systemPrompt.suppressed, false)
   assert.deepEqual(worker.systemPrompt.sections, [])
   assert.deepEqual(host.infos, ['chat-subagent/delegator: subagent worker route gpt-6-luna'])
 
-  // Nothing was installed on either agent's OWN scope beyond the persona.
+  // The root's catalog mask lands one macrotask later (the row emits
+  // `tools/change` itself), the child gets none, and no per-agent guard lands on
+  // either scope.
+  assert.equal(agent.toolsSeen.restrictCalls, 0)
+  await tick()
+  assert.deepEqual(agent.toolsSeen.restrictions, [{ allow: [] }])
+  assert.equal(agent.toolsSeen.restrictCalls, 1)
+  assert.equal(worker.toolsSeen.restrictCalls, 0)
   assert.deepEqual(agent.toolsSeen.guards, [])
   assert.deepEqual(worker.toolsSeen.guards, [])
-  assert.equal(agent.toolsSeen.restrictCalls, 0)
   assert.equal(host.seen.guards.length, 1)
+  assert.equal(host.seen.restrictCalls, 0)
 }
 
 // ── the row's note override ──────────────────────────────────────────────────
@@ -471,6 +514,119 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // Forgotten, not merely unsubscribed: nothing logs that child again.
   assert.deepEqual(host.infos, ['chat-subagent/delegator: subagent gone route gpt-6-luna'])
   assert.deepEqual(host.warnings, [])
+}
+
+// ── the depth-0 catalog mask: install, lift, dispose ─────────────────────────
+//
+// The mask is `restrict({ allow: [] })` on a ROOT agent's own scope: it filters
+// only the surface that scope inherits, so the own-layer `subagent` and
+// `list_subagent_models` stay. A delegated child is parented to the standing
+// scope, not to the root Agent's scope, so it is never masked. Installing a
+// restriction notifies `tools/change`, hence the one-macrotask delay.
+
+{
+  const root = fakeAgent({ id: 'root-masked' })
+  const child = fakeAgent({ id: 'child-unmasked', runtimeDepth: 1 })
+  const live = [root, child]
+  let composed = 'chat-subagent'
+  const host = fakeHost({ liveAgents: live, presetOf: () => composed })
+  // An agent that arrived before this plugin mounted — a resume or an HMR
+  // revision — is reconciled by the initial call, not by `agent/created`.
+  apply(host.ctx, CONFIG)
+  await tick()
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+  assert.equal(root.toolsSeen.restrictCalls, 1)
+  assert.equal(child.toolsSeen.restrictCalls, 0)
+  assert.deepEqual(host.warnings, [])
+
+  // Idempotent: the mask's own `tools/change` re-enters reconcile; the deferred
+  // flush must find it already installed instead of stacking another.
+  host.fire('tools/change', {})
+  await tick()
+  assert.equal(root.toolsSeen.restrictCalls, 1)
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+
+  // Leaving this preset lifts the mask; coming back installs it again.
+  composed = 'pair-coding-agent'
+  host.fire('tools/change', {})
+  await tick()
+  assert.deepEqual(root.toolsSeen.restrictions, [])
+  composed = 'chat-subagent'
+  host.fire('tools/change', {})
+  await tick()
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+
+  // Disposing the row (HMR, a removed patch) lifts the mask it installed, and
+  // nothing queued puts it back.
+  host.dispose()
+  assert.deepEqual(root.toolsSeen.restrictions, [])
+  await tick()
+  assert.deepEqual(root.toolsSeen.restrictions, [])
+  assert.equal(child.toolsSeen.restrictCalls, 0)
+}
+
+// ── a disposed agent is forgotten, never re-masked ──────────────────────────
+
+{
+  const root = fakeAgent({ id: 'root-gone' })
+  const live = [root]
+  const host = fakeHost({ liveAgents: live, presetOf: () => 'chat-subagent' })
+  apply(host.ctx, CONFIG)
+  await tick()
+  assert.equal(root.toolsSeen.restrictCalls, 1)
+
+  live.length = 0
+  host.fire('agent/disposed', { agent: root })
+  host.fire('tools/change', {})
+  await tick()
+  // The agent's own fiber owns the restriction; the plugin only forgets it and
+  // never touches the disposing scope.
+  assert.equal(root.toolsSeen.restrictCalls, 1)
+  assert.deepEqual(host.warnings, [])
+}
+
+// ── no mask without a preset identity or a preset registry ──────────────────
+
+{
+  // `presetId` unset: the plugin must not guess whose catalog it may narrow.
+  const unconfigured = fakeAgent({ id: 'root-noid' })
+  const host = fakeHost({ liveAgents: [unconfigured] })
+  apply(host.ctx, { subagentTools: SUBAGENT_TOOLS })
+  host.fire('agent/created', { agent: unconfigured })
+  await tick()
+  assert.equal(unconfigured.toolsSeen.restrictCalls, 0)
+  assert.ok(host.warnings.some(m => m.includes('no `presetId` configured')))
+
+  // No `agentPresets` service: `belongs()` cannot answer, so no mask either.
+  const bare = fakeAgent({ id: 'root-no-registry' })
+  const bared = fakeHost({ liveAgents: [bare], noPresets: true })
+  apply(bared.ctx, CONFIG)
+  bared.fire('agent/created', { agent: bare })
+  await tick()
+  assert.equal(bare.toolsSeen.restrictCalls, 0)
+  assert.deepEqual(bared.warnings, [])
+}
+
+// ── mask failures degrade loudly, never break the mount ─────────────────────
+
+{
+  // A registry without `restrict()`: the persona still lands and the session
+  // keeps the whole catalog rather than failing to mount.
+  const noRestrict = fakeAgent({ id: 'root-no-restrict' })
+  noRestrict.ctx.tools = {}
+  const noRestrictHost = fakeHost({ liveAgents: [noRestrict], presetOf: () => 'chat-subagent' })
+  apply(noRestrictHost.ctx, CONFIG)
+  await tick()
+  assert.ok(noRestrictHost.warnings.some(m => m.includes('no tools.restrict()')))
+  assert.equal(noRestrict.systemPrompt.sections.length, 1)
+
+  // A `restrict()` that throws is reported, not rethrown out of the flush.
+  const thrower = fakeAgent({ id: 'root-throws' })
+  thrower.ctx.tools = { restrict() { throw new Error('scope closed') } }
+  const throwerHost = fakeHost({ liveAgents: [thrower], presetOf: () => 'chat-subagent' })
+  apply(throwerHost.ctx, CONFIG)
+  await tick()
+  assert.ok(throwerHost.warnings.some(m => m.includes('masking agent root-throws failed')))
 }
 
 // ── the helper stays honest when called directly ─────────────────────────────

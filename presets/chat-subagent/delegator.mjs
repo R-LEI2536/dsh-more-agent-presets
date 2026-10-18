@@ -1,12 +1,14 @@
 /**
  * chat-subagent — the delegation guard and the delegator persona.
  *
- * The preset's invariant: a TOP-LEVEL session's CATALOG is the whole preset, but
- * `subagent` is the only tool it may CALL that acts — plus the read-only
- * `list_subagent_models` the `modelSelectionSettings` opt-in registers. The
- * delegated subagent may call only the read-only names its declaration lists.
- * Enforcement is ONE standing guard (point 6), and no tool restriction exists at
- * all (point 5).
+ * The preset's invariant: a TOP-LEVEL session's CATALOG holds only the two
+ * own-layer delegation names — `subagent`, the one tool that acts, and the
+ * read-only `list_subagent_models` the `modelSelectionSettings` opt-in
+ * registers. The delegated subagent may call only the read-only names its
+ * declaration lists.
+ * Enforcement is ONE standing guard (point 6). The catalog is narrowed by one
+ * per-agent depth-0 `restrict({ allow: [] })` mask (point 5), which is not
+ * enforcement and never reaches a delegated child.
  *
  * No prompt text is written in this file: the per-model half is
  * `../shared/model-personas.json` and the delegation half is
@@ -35,10 +37,11 @@
  * INHERITS and overlays its own registrations unfiltered
  * (`packages/core/tools/src/index.ts:1178-1209`), and `tools.restrict()` refuses
  * an unscoped caller with exactly this instruction: "deny the tool for the
- * intended agent instead" (`:1097-1100`). What this plugin installs per agent, at
- * `agent/created`, is therefore the PERSONA alone (points 3-4); the enforcement
- * needs no scope of its own, because a guard is read from the calling agent's
- * chain (point 6).
+ * intended agent instead" (`:1097-1100`). What this plugin installs per agent at
+ * `agent/created` is therefore the PERSONA alone (points 3-4); the catalog mask is
+ * per-agent too, but it installs one macrotask after the dispatch (point 5) and
+ * enforces nothing — the enforcement needs no scope of its own, because a guard is
+ * read from the calling agent's chain (point 6).
  *
  * (3) `agent/created` is awaited by the creation transaction before the Agent is
  * announced (`packages/core/agent/src/index.ts:537-559`), so the persona
@@ -52,24 +55,25 @@
  * (`agent-preset-registry/src/index.ts:306-334`). `tools/change` reconciliation
  * covers that path, HMR re-mounts, and `agent/created` on resume.
  *
- * (5) There is NO tool restriction in this preset, and that is deliberate. A
- * restriction is the only way to hide a catalog row, but `restrict()` notifies
- * `tools/change` (`packages/core/scope/src/store.ts:226-266`; `notify` defaults
- * to true) where `tools.guard()` explicitly does not
- * (`packages/core/tools/src/index.ts:1136-1142`). That notification is what broke
- * 1.7.3: an agent-scope restriction installed from `agent/created` reached
- * `@deepseek-ai/dsh-tool-subagent`'s reconciler (`src/index.ts:693-698`), which
- * installs into a live Agent on `tools/change`, so one scope got TWO installs;
- * the second threw `tool "list_subagent_models" is already registered in this
- * scope` from `registerListSubagentModels()` (`src/list-models.ts:87`, reached
- * from `install()` at `src/index.ts:360-362`), `install()` aborted before its
- * `mount()`, and the session was left with NO delegation tool at all — observed
- * live on `dev_web`, and the same symptom the previous attempt recorded as "a
- * second live plugin instance registers the same names, the duplicate
- * registration throws, and `mount()` never runs". Nothing in this file emits
- * `tools/change` any more, so that interleaving cannot happen again. The cost is
- * the catalog: the root session SEES the preset's rows (`read`, `write`, `edit`,
- * `glob`, `grep`, `todo_*`, `job_*`) and can call none of them.
+ * (5) The TOP-LEVEL catalog is narrowed by ONE per-agent restriction, and that is
+ * the only restriction in this plugin. A preset-plane `restrict({ allow: [] })` is
+ * wrong (point 1: a delegated child joins the same standing scope, so it would
+ * lose the rows it works through), but a restriction on the ROOT AGENT's own
+ * scope is not on the child's chain (point 2) and filters only the surface that
+ * scope INHERITS (`packages/core/tools/src/index.ts:1178-1219`): the own-layer
+ * `subagent` / `list_subagent_models` stay visible while this preset's rows
+ * (`read`, `write`, `edit`, `glob`, `grep`, `todo_*`, `job_*`) disappear from this
+ * session's catalog. Two constraints keep it safe. First, it is a CATALOG mask,
+ * never enforcement: the standing guard (point 6) is still what refuses calls.
+ * Second, `restrict()` notifies `tools/change`
+ * (`packages/core/scope/src/store.ts:226-266`; `notify` defaults to true) where
+ * `tools.guard()` does not (`packages/core/tools/src/index.ts:1136-1142`), and
+ * the official delegation plugin installs into a live Agent on that event
+ * (`src/index.ts:693-698`) — the 1.7.3/1.7.5 collision. So the mask is installed
+ * ONE MACROTASK LATER (one coalesced `setTimeout`), after the dispatch that
+ * reported a switch has settled, and it is lifted both when the agent leaves this
+ * preset and when this row unloads. Nothing here installs a restriction inside a
+ * dispatch.
  *
  * (6) The guard is the whole enforcement, and it is installed once on this
  * preset's STANDING scope rather than per agent. It is read from the CALLING
@@ -97,8 +101,12 @@
  * suppressed runtime context. `reconcile()` therefore LIFTS the persona as soon
  * as `composedPreset(agent.ctx)` stops naming this preset, every install records
  * its disposer for that, `agent/disposed` frees the entry, and disposing this row
- * lifts whatever it installed. The guard needs none of that: it lives on the
- * standing scope, so a switch disposes it with the composition that installed it.
+ * lifts whatever it installed. The depth-0 catalog mask is per-agent too
+ * (point 5) and travels the same bidirectional path, except that
+ * `agent/disposed` only forgets its map entry: the restriction is registered on
+ * the agent's own fiber, so that fiber's disposal owns it. The guard needs none
+ * of that: it lives on the standing scope, so a switch disposes it with the
+ * composition that installed it.
  *
  * `run_code` is the PTC mode presentation transport, not a capability: under
  * `ptc` a model-direct call may ONLY name it — every other name is collapsed and
@@ -332,8 +340,8 @@ export function apply(ctx, config) {
   /**
    * Give one agent what only it may carry: the root session gets this preset's
    * whole prompt, a delegated child only gets its route logged. No tool
-   * registration happens here — the guard is standing (point 6) and there is no
-   * restriction to install (point 5).
+   * registration happens here — the guard is standing (point 6) and the catalog
+   * mask is installed separately, one macrotask later (point 5).
    * @param agent - the agent to dress.
    */
   const installPersona = (agent) => {
@@ -381,21 +389,105 @@ export function apply(ctx, config) {
     }
   }
 
+  /** agent → the disposer of the depth-0 catalog mask this plugin installed. */
+  const masks = new Map()
+  /** Set when this row is disposed, so a queued mask flush cannot reinstall. */
+  let disposed = false
+  /** The single queued catalog-mask flush, coalescing every notification. */
+  let maskTask
+
+  /**
+   * Hide this preset's inherited tool rows from ONE top-level session's catalog.
+   * `restrict({ allow: [] })` filters only the surface a scope INHERITS
+   * (`packages/core/tools/src/index.ts:1178-1219`), so the own-layer `subagent`
+   * and `list_subagent_models` stay visible. It is a catalog mask, not
+   * enforcement (point 5), and a delegated child never inherits it (point 2).
+   * @param agent - the depth-0 agent to mask.
+   */
+  const installMask = (agent) => {
+    if (masks.has(agent)) return
+    const tools = agent.ctx?.tools
+    if (typeof tools?.restrict !== 'function') {
+      warn(`agent ${String(agent?.id)} has no tools.restrict(); its catalog keeps this preset's rows`)
+      return
+    }
+    try {
+      masks.set(agent, tools.restrict({ allow: [] }))
+    } catch (error) {
+      warn(`masking agent ${String(agent?.id)} failed: ${String(error)}`)
+    }
+  }
+
+  /**
+   * Lift one agent's catalog mask.
+   * @param agent - the agent whose mask must go.
+   */
+  const liftMask = (agent) => {
+    const dispose = masks.get(agent)
+    if (dispose === undefined) return
+    masks.delete(agent)
+    try {
+      dispose()
+    } catch (error) {
+      warn(`lifting the catalog mask of agent ${String(agent?.id)} failed: ${String(error)}`)
+    }
+  }
+
+  /**
+   * Reconcile every live agent's mask in one pass. Runs as its own macrotask:
+   * `restrict()` notifies `tools/change`, so installing inside the dispatch that
+   * reported a switch would re-enter the official per-Agent install (point 5).
+   */
+  const flushMasks = () => {
+    maskTask = undefined
+    if (disposed) return
+    const agents = ctx.get('agents')
+    const presets = ctx.get('agentPresets')
+    if (agents === undefined || presets === undefined) return
+    for (const agent of agents.list()) {
+      if (belongs(agent) && depthOf(agent) === 0) installMask(agent)
+      else liftMask(agent)
+    }
+  }
+
+  /** Coalesce mask work into one macrotask; never inside the current dispatch. */
+  const scheduleMasks = () => {
+    if (disposed || presetId === undefined || maskTask !== undefined) return
+    maskTask = setTimeout(flushMasks, 0)
+  }
+
   ctx.on('agent/created', ({ agent }) => {
-    if (belongs(agent)) installPersona(agent)
+    if (!belongs(agent)) return
+    installPersona(agent)
+    scheduleMasks()
   })
-  // A disposed agent needs no persona, and must not stay in the map.
-  ctx.on('agent/disposed', ({ agent }) => liftPersona(agent))
+  // A disposed agent needs no persona, and must not stay in either map.
+  ctx.on('agent/disposed', ({ agent }) => {
+    liftPersona(agent)
+    // The restriction is registered on the agent's own fiber, so that fiber's
+    // disposal removes it. Forget the entry without emitting `tools/change` in
+    // the disposal window.
+    masks.delete(agent)
+  })
   // Disposing THIS row (HMR, a re-mounted revision, a removed patch) lifts what
-  // it installed, so no agent keeps a persona no live plugin owns. The guard
-  // disposes itself with the standing scope it was installed on.
-  ctx.effect(() => () => { for (const agent of [...personas.keys()]) liftPersona(agent) })
+  // it installed, so no agent keeps a persona or a catalog mask no live plugin
+  // owns. The guard disposes itself with the standing scope it was installed on.
+  ctx.effect(() => () => {
+    disposed = true
+    if (maskTask !== undefined) {
+      clearTimeout(maskTask)
+      maskTask = undefined
+    }
+    for (const agent of [...personas.keys()]) liftPersona(agent)
+    for (const agent of [...masks.keys()]) liftMask(agent)
+  })
 
   if (presetId === undefined) return
 
   /**
    * Dress every live agent of this preset that creation never announced to us,
-   * and LIFT the persona this plugin left on an agent that stopped composing it.
+   * LIFT the persona this plugin left on an agent that stopped composing it, and
+   * re-reconcile the depth-0 catalog masks (deferred, see point 5).
    */
   const reconcile = () => {
     const agents = ctx.get('agents')
@@ -405,6 +497,7 @@ export function apply(ctx, config) {
       if (belongs(agent)) installPersona(agent)
       else liftPersona(agent)
     }
+    scheduleMasks()
   }
   // Covers the blank-session preset switch — in BOTH directions — a re-mounted
   // plugin revision, and any tool registration that changes what an install
