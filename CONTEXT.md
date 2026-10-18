@@ -66,6 +66,10 @@ _Avoid_: worker（内部叫法，不是产品术语）
 `presets/shared/subagent-route-log.mjs`；`chat-subagent` 由自己的 `delegator` 打同一行）。
 _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
 
+**Preset switch**:
+Web 新会话先按默认 preset 建好，再通过 `agentPresets.select` → `recompose` 换到用户选的 preset：只重挂 agent 的 scope 父链，并**只发一次** `tools/change`。各 preset 的派活实例按**挂载顺序**处理这条事件；“装新 / 拆旧”是异步竞态，incoming 的监听器更早时，`list_subagent_models` 会在旧注册还在时重名，导致会话两个派活工具全丢（1.7.5 实测）。因此派活行的**位置**属于设计：`chat-subagent` 的 `tool-subagent` 必须留在 `cordis:group` 内，让监听器排到最后一个；移回顶层会重现故障（1.7.6 起由 `check-subagent-model-selection.mjs` 钉死）。反向切换（空白会话改选到更早名次的 preset）仍有同样缺陷，属上游问题。
+_Avoid_: “换模式”（preset 不是 permission mode）、把它当成配置问题（它是挂载顺序）
+
 ## Flagged ambiguities
 
 - “preset id” 在本仓库指 `config.id`（如 `chat-agent`），**不是** Loader 行 id（`preset-chat-agent`）。会话日志记录的是前者，因此只有前者被冻结。

@@ -69,6 +69,25 @@
 # rather than a mask (see above). The five coding presets keep the flag too, so
 # the only difference is that this preset may CALL one of the tools it lists.
 #
+# WHY THE DELEGATION ROW IS INSIDE A `cordis:group`. Measured, 2026-10-18: a
+# preset switch is `agentPresets.select` → `recompose` (a scope rebind plus ONE
+# `tools/change`), and the per-Agent install of the INCOMING preset races the
+# asynchronous disposal of the OUTGOING one. Their order is listener order,
+# which is preset MOUNT order, and a top-level row mounts before the rows of a
+# `cordis:group`: a top-level delegation row put this preset FIRST among the
+# eleven `tools/change` listeners (measured index 2, before `standard` at 3),
+# so every switch INTO this preset registered `list_subagent_models` while
+# `standard`'s copy was still there — the duplicate threw, `install()` aborted
+# before `mount()`, the failed fiber stayed cached in `scopedInstalls`, and the
+# session kept NEITHER tool. Inside this group the listener registers LATE
+# (after every other preset's), the outgoing removal runs first, and the switch
+# succeeds. This is a workaround, not a fix: the reverse direction (leaving this
+# preset for an earlier-indexed one while the session is still blank) collides
+# instead. The real fix belongs in `@deepseek-ai/dsh-tool-subagent` (do not
+# cache a failed per-Agent install, so the next `tools/change` retries); it is
+# recorded in CHANGELOG 1.7.6 and TODO.md. Do not move this row back out of the
+# group: the top-level failure was measured on a live profile.
+#
 # The top-level persona text is NOT here: `delegator.mjs` composes it from the
 # shared table `chat-agent` also reads (`presets/shared/model-personas.json`, via
 # `presets/shared/model-persona.mjs`) plus the delegation note it reads from
@@ -107,25 +126,32 @@
                 - todo_write
                 - job_list
 
-          # The one model-facing tool that acts (header).
-          - id: tool-subagent
-            name: '@deepseek-ai/dsh-tool-subagent'
+          # The one model-facing tool that acts (header). It sits inside a
+          # group on purpose: see "WHY THE DELEGATION ROW IS INSIDE A GROUP".
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
             config:
-              provider: spawn
-              toolName: subagent
-              backgroundMode: one-shot
-              enableRunInBackground: false
-              maxDepth: 1
-              # Authorized routes come from the Host's
-              # `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row,
-              # which the profile must mount: without it this row fails and the
-              # WHOLE preset reports a load failure.
-              modelSelectionSettings: true
-              persona: >-
-                You are a delegated read-only subagent of a chat session. Work only through the tools
-                in your catalog, keep the investigation tight, and answer with a concise report the
-                delegating agent can act on: what you checked, what you found, and anything you could
-                not determine. You cannot modify files, run commands, or delegate further.
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  backgroundMode: one-shot
+                  enableRunInBackground: false
+                  maxDepth: 1
+                  # Authorized routes come from the Host's
+                  # `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row,
+                  # which the profile must mount: without it this row fails and the
+                  # WHOLE preset reports a load failure.
+                  modelSelectionSettings: true
+                  persona: >-
+                    You are a delegated read-only subagent of a chat session. Work only through the tools
+                    in your catalog, keep the investigation tight, and answer with a concise report the
+                    delegating agent can act on: what you checked, what you found, and anything you could
+                    not determine. You cannot modify files, run commands, or delegate further.
 
           # The child's tool sources. They are visible in the top-level session's
           # catalog too, and refused there by the guard.

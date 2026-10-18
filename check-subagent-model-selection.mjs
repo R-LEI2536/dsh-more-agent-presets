@@ -19,6 +19,10 @@
  * ONE failed row marks the whole preset broken. Both READMEs must keep naming
  * that plugin, which is the second half of this check.
  *
+ * `chat-subagent` is also pinned to keep its delegation row INSIDE a
+ * `cordis:group`: a top-level row mounts earlier than a group's children, which
+ * flips the preset-switch race and loses the tool (CHANGELOG 1.7.6).
+ *
  * Not in `files`, so it never ships.
  */
 
@@ -91,6 +95,33 @@ assert.equal(
   'chat-subagent: exactly one row opts in',
 )
 assert.doesNotMatch(chatSubagent, /- id: tool-subagent-fork/, 'chat-subagent mounts no fork row')
+
+// The delegation row must be a CHILD of a `cordis:group`, never a top-level
+// row. Measured on 2026-10-18: the incoming preset's per-Agent install races the
+// outgoing preset's asynchronous disposal inside one `tools/change` dispatch,
+// and the race order is preset MOUNT order. A top-level row mounts before a
+// group's children, so it put this preset's listener FIRST (index 2 of 11,
+// before `standard` at 3), and every switch INTO `chat-subagent` registered
+// `list_subagent_models` before the outgoing copy was gone: the duplicate made
+// `install()` abort before `mount()`, the failed fiber stayed cached, and the
+// session kept neither tool (CHANGELOG 1.7.5/1.7.6). Group-nested, the listener
+// registers after every other preset's, so the outgoing removal runs first and
+// the switch succeeds. This pin exists so a future edit cannot silently move the
+// row back to the top level.
+const indentationOf = rowId => new RegExp(`^([ \\t]*)- id: ${rowId}$`, 'm').exec(chatSubagent)?.[1].length
+const delegatorIndent = indentationOf('delegator')
+const delegationIndent = indentationOf('tool-subagent')
+assert.equal(typeof delegatorIndent, 'number', 'chat-subagent: the delegator row must stay in the declaration')
+assert.equal(typeof delegationIndent, 'number', 'chat-subagent: the delegation row must stay in the declaration')
+assert.ok(
+  delegationIndent > delegatorIndent,
+  'chat-subagent: the delegation row must be nested inside a group, not top-level (preset-switch order)',
+)
+assert.match(
+  chatSubagent,
+  /- id: delegation\n[ \t]+name: cordis:group\n[ \t]+group: true\n[ \t]+isolate:\n[ \t]+workflowEngine: true\n[ \t]+config:\n(?:[ \t]+#.*\n)*[ \t]+- id: tool-subagent\n/,
+  'chat-subagent: the `delegation` group must be the row carrier',
+)
 
 // chat-agent: the zero-tool preset must not grow a delegation row.
 const chatAgent = read('chat-agent')

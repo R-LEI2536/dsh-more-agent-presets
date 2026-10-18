@@ -43,19 +43,41 @@ or remove them once a decision lands.
 
 - **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话）。要让
   「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，本次刻意不做，先看实际使用情况。
-- **已确认的上游缺陷（1.7.4 记录，1.7.3 实测）：两条安装路径写同一个 agent scope。** 终端原文
-  `[E] scope Error: tool "list_subagent_models" is already registered in this scope`，调用栈
-  `registerListSubagentModels (tool-subagent/src/list-models.ts:87)` ← `install (…/src/index.ts:360-362)` ← inject 回调
-  (`…/src/index.ts:676`)。触发条件是当时的 `delegator.mjs` 在 `agent/created` 里装 agent-scope restriction：`restrict()`
-  会发 `tools/change`（`packages/core/scope/src/store.ts:226-266`，`notify` 默认 true；而 `guard()` 是 `notify: false`，
-  `packages/core/tools/src/index.ts:1136-1142`），官方插件正是在 `tools/change` 上安装到活着的 agent
-  （`…/src/index.ts:693-698`），于是同一个 scope 装了两次；第二次重名抛错，`install()` 在 `mount()` 之前中止——已注册的
-  lister 与从未注册的 `subagent` 一起留在半路，会话**零工具**。上报上游时的最小修法：重名时跳过或回滚该次安装，而不是让
-  `install()` 整体抛出（它把 `registerListSubagentModels()` 放在 `mount()` 之前，且没有 try/finally）。
-- **我们的规避方式：这个 preset 一条 restriction 都不装**，强制面改为 standing guard（见 CONTEXT.md 的
-  **Delegation guard**），因此创建窗口里本插件零 `tools/change`，上述交错无法再发生。5 个编程 preset 本来就没有这层插件。
-- **若在 5 个编程 preset 上复现**：记录并回报上游；必要时删掉这些 preset spawn 行的 `modelSelectionSettings` 键，一行即可
-  整体回退（`chat-subagent` 同理，代价是失去路由参数与 `list_subagent_models`）。
+- **已确认的上游缺陷：切换 preset 时，新 preset 的 per-Agent 安装可能跑在旧 preset 的拆除之前。**
+  2026-10-17 在 dev_web（DSH 检出，1.7.4→1.7.5 实测）用临时 `info` 诊断（打印每个 agent 的 preset 及其目录里
+  `subagent`/`list_subagent_models` 是否可解析，测完已删）定案：
+  - 触发条件是**给活着的会话切换 preset**：新 web 会话先以默认 `standard` 组合创建，随后才切到用户选的 preset
+    （日志里同一个 agent id 从 `preset=standard` 变成 `preset=<目标>`）。
+  - 开了 `modelSelectionSettings` 的 preset 会把 `list_subagent_models`（**全局名**）注册进**每个 agent 自己的 scope**。
+  - 切换时若"新安装"排在"旧拆除"之前，就撞名：`[E] scope Error: tool "list_subagent_models" is already registered in
+    this scope`（`registerListSubagentModels` `list-models.ts:87` ← `install` ← `agent.ctx.inject` 回调
+    `tool-subagent/src/index.ts:676`）；`install()` 在 `mount()` 之前中止，随后旧 fiber 拆完，把该 scope 里剩下的也一并
+    带走 → 会话里 `subagent`、`list_subagent_models` 全无。
+  - 失败会被记住：`scopedInstalls`（`WeakMap<Agent, fiber>`）在 `inject` 返回后立刻登记，即使那次安装已经抛错，之后的
+    `tools/change` 也不会重试（`installScoped` 命中 `existing !== undefined` 就直接返回），所以一次撞名 = 该 agent 永久没有派活工具。
+  - 同轮实测对照（差别只在 dispatch 里的先后）：
+    - `standard → pair-coding-agent`：`subagent=false lister=true` → `lister=false`（旧拆除完）→ `lister=true` →
+      `subagent=true` ✅
+    - `standard → iflow-coding-agent`：同样 ✅，且成功派出子 agent
+    - `standard → chat-subagent`：`subagent=true lister=true` → `[E]` → 旧拆除 → `subagent=false lister=false` ❌
+  - **为什么只有 chat-subagent 每次都输：已定案（2026-10-18 实测）。** 判别项是**行的位置**，不是 `delegator` 行（临时删掉
+    `delegator` 后仍丢）。切换时各 preset 的 `tool-subagent` 实例按**挂载顺序**收到同一个 `tools/change`；`chat-subagent`
+    的委派行原来是**顶层行**，而顶层行比 `cordis:group` 的子行挂得早，于是它的监听器排第 2，比 `standard`（第 3）还早——
+    “装”先于“删”，必撞。实测名次：`chat-subagent` 2、`standard` 3、`ptc` 4、`cordis` 5、codex 6、iflow 7、iflow-cre 8、
+    pair 9、qwencode 10；判据是“incoming 名次 < outgoing 名次则坏”。
+  - **这不是本插件的缺陷：纯 DSH 自带 preset 也坏。** 实测 `cordis → standard`、`cordis → ptc`、`pair-coding-agent →
+    standard` 都丢工具，报同样的 duplicate 错。
+  - **1.7.6 的绕法（已实测）：** 把 `tool-subagent` 行包进 `cordis:group`（与 coding preset 同形），名次从 2 移到最后一个；
+    `standard → chat-subagent`、`ptc → chat-subagent` 都变成保留，切换后 schema 仍带 `provider`/`model`/`reasoning_effort`，
+    preset 不 broken。代价：反向切换（空白会话改选到更早名次的 preset，如 `chat-subagent → standard`）会丢**目标** preset
+    的工具，开新会话即可。行位置由 `check-subagent-model-selection.mjs` 钉死，不要移回顶层。
+  - 上游真修法（未提交，最终解）：安装失败时不要登记 fiber，让紧随其后的 `tools/change`（旧 fiber 拆除时必然会发）触发重试；
+    顺带把同函数 `removeScoped` 里的 `void fiber.dispose().catch(...)` 包成 `Promise.resolve(...)`（见上方已知告警）。
+- **我们的强制面不是这个缺陷的原因。** 这个 preset 一条 restriction 都不装、创建窗口里本插件零 `tools/change`（强制面是
+  standing guard），上面这条是官方 per-Agent 安装自己的顺序问题，与我们的注册无关；1.7.6 之前误判为“无法规避”，现在用
+  行位置规避（上游修好后可还原为顶层行）。5 个编程 preset 只是恰好在该轮 dispatch 里“拆在前、装在後”而没撞上。
+- **可选的整体回退**：删掉 6 个 preset spawn 行的 `modelSelectionSettings` 键（各一行）即可让所有 preset 都不会撞名，
+  代价是失去路由参数与 `list_subagent_models`；`chat-subagent` 因此暂时不可用，是否回退由使用方决定。
 
 ## `codex-coding-agent` preset
 
