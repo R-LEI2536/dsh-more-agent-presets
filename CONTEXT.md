@@ -70,7 +70,8 @@ _Avoid_: worker（内部叫法，不是产品术语）
 正好是 restriction 不过滤的层——所以 **Catalog mask** 写 `allow: []` 也藏不掉这两个派活名字，强制面因此只能是
 **Delegation guard**。本 bundle 的 5 个编程 preset 与
 `chat-subagent` 都开启；后者因此多一个只读的 `list_subagent_models`，**Delegator preset** 的不变量随之读作「只有一个能
-动手的工具」。
+动手的工具」。`chat-subagent` 的 **Delegation guard** 另加一条保险：这份名单非空时，depth-0 的 `subagent` 调用必须点名
+`provider`+`model`，不点名会被拒；名单为空、开关关闭或策略读不到时仍走「省略即继承」（fail open）。
 落脚点由终端那一行报出：`<presetId>/subagent-route-log: subagent <id> route <provider>/<model>`（5 个编程 preset 挂
 `presets/shared/subagent-route-log.mjs`；`chat-subagent` 由自己的 `delegator` 打同一行）。
 _Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）

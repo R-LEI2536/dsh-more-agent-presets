@@ -102,6 +102,8 @@ That row must exist in the profile. The shipped `dsh-base` + `dsh-web-app` stack
 
 `chat-subagent` opts in too, so a chat session can name the child's model like the coding presets do. Its top-level catalog is not empty — the two delegation names are the ONLY entries in it — and exactly one of them acts, which is why its invariant reads "exactly one tool that ACTS". The flag also moves the delegation tool from the preset's standing plane into each agent's own layer: that own layer is precisely what a restriction never filters, which is why the depth-0 mask can be `allow: []` without stripping the delegation itself (see the preset section above). `chat-agent` mounts no tool row at all, so it has nothing to opt in.
 
+`chat-subagent` differs on one point: its standing guard refuses a depth-0 `subagent` call that names neither `provider` nor `model` whenever the authorized list holds at least one route, so a session that never called `list_subagent_models` cannot delegate silently on the inherited route. With no list to name — the opt-in off, an empty list, or a policy this build cannot read — omission stays legal and the child inherits the parent route. The five coding presets keep the official omit-to-inherit behaviour: their delegation note asks for a named route, and nothing refuses its absence.
+
 **Which model a child actually ran on is a terminal line.** Every delegation prints one, from `presets/shared/subagent-route-log.mjs` — mounted by these five presets — or from `chat-subagent`'s own `delegator`:
 
 ```

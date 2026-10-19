@@ -102,6 +102,8 @@ Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默�
 
 `chat-subagent` 也开了这个开关，所以聊天会话同样能给子 agent 指定模型。它的顶层目录不为空——其中**只有**这两个派活名字——且只有一个能动手，所以它的不变量读作「只有一个**能动手**的工具」。开关还会把派活工具从 preset 平面挪进每个 agent 自身层：自身层正好是任何 restriction 都不过滤的层，这也是 depth-0 mask 可以写 `allow: []` 而不至于把派活本身藏掉的原因（见上一节）。`chat-agent` 没有任何工具行，不涉及。
 
+`chat-subagent` 有一处不同：当授权名单非空时，它的 standing guard 会拒绝 depth-0 上不带 `provider` 和 `model` 的 `subagent` 调用，所以没调过 `list_subagent_models` 的会话不能静默用继承来的路由派活。名单为空、开关关闭、或这份策略读不到时，「省略即继承」仍然成立。5 个编程 preset 保持官方的省略即继承：它们的派活说明只是要求点名，不点名不会被拒。
+
 **子 agent 究竟跑在哪个模型上，看终端那一行。** 每次派活都打一行：这 5 个 preset 由 `presets/shared/subagent-route-log.mjs` 打，`chat-subagent` 由它自己的 `delegator` 打：
 
 ```
