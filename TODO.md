@@ -39,6 +39,40 @@ or remove them once a decision lands.
     的沙箱范围内改文件，而任何需要审批的操作会被自动拒绝。想要更细的 per-child 权限，得先有 DSH 侧
     的表达。`job_list` 已经在默认名单里，放开后立刻可用。
 
+## 计划中：`chat-subagent-durable`（fork 自 `chat-subagent`）
+
+- **决定（2026-10-18）：另开一个 preset 实现「可续 / 可后台的派活」，不动 `chat-subagent`。今天只记这里，不动实现。**
+  开发走独立 git 分支（名待定，暂拟 `feat/chat-subagent-durable`），`main` 上先只留这份 TODO。
+  两边互斥的根因是那条核心规则：`chat-subagent` 顶层目录刻意只有 `subagent` + `list_subagent_models`
+  （`presets/chat-subagent/delegator.mjs` 的 `DELEGATOR_TOOLS`），而「续」要 `send_message`、
+  「收后台结果」要 `job_output`。
+- **为什么现在派出去的子 agent 全是一次性**（现状说明，免得明天重查）：`backgroundMode: one-shot` +
+  `enableRunInBackground: false` + `provider: spawn`（`inheritsParentContext = false`，每次都是全新 child、
+  看不见本会话）三者叠加。`spawn` **本身具备** `prepareContinuable`
+  （`subagent-spawn-in-process/src/index.ts:61`），所以拦住「可续」的不是 provider 能力，是配置加目录。
+  详见 `presets/chat-subagent.patch.yml:61-70` 的 header。
+- **开工清单（缺一不可）**：
+  1. 新建 `presets/chat-subagent-durable.patch.yml`：自 `chat-subagent.patch.yml` 复制，改
+     `id`/`order`/`name`/`description`。两条硬约束照抄：委派行必须仍包在 `cordis:group` 里（1.7.6 的撞名绕法，
+     行位置由 `check-subagent-model-selection.mjs` 钉死），`modelSelectionSettings: true` 保持。
+  2. 挂上 `@deepseek-ai/dsh-tool-subagent-control`（注册 `send_message` + `list_agents`，见其
+     `src/index.ts:29`、`list-agents.ts:87`）。先确认它在 web profile 下的挂法，以及是否必须与
+     `tool-subagent` 同处一个 group。
+  3. 委派行改成 `backgroundMode: continuable` + `enableRunInBackground: true`；同时定 `maxDepth`，
+     以及「子 agent 续跑多久算跑完」。
+  4. 顶层白名单要放行新增名字：`delegator.mjs` 把 `presetId: chat-subagent` 和目录白名单都写死了，
+     要么参数化、要么另存一份插件文件（倾向前者，避免两份 guard 漂移）。
+  5. 新的派活段落（`delegation-note.md` 或行内 `config.delegationNote`）：写明「可后台起手、追活用
+     `send_message`、收结果用 `job_output`」。现有那份写的是「派一次、等报告」，不能直接复用。
+- **风险 / 开工先验证**：
+  - `tool-subagent` 只在 `backgroundEnabled && continuable` 时注册一段英文 system-prompt
+    （`tool-subagent/src/index.ts:594-604`），顶层会多出一段，确认与声明式提示词不冲突。
+  - `continuable` 子 agent 是**持久 session**（有 session 记录，落在 `~/.dsh/storages`），要定清理由谁负责
+    （上游有 `drainContinuableChildren` / release 面）；别让聊天会话攒出一堆收不回来的子会话。
+  - 后台起 = 顶层要轮询 / 收集，token 和提示词成本都上升。**先实测再决定是否随 release 发布**，不要先动版本号。
+  - 它会是第 7 个开 `modelSelectionSettings` 的 preset：切换顺序 / 名次假设要重测，`check-*.mjs` 要覆盖它。
+- **未定项**：preset id（暂用 `chat-subagent-durable`）、`order` 序号、中文显示名、是否两个 preset 并存给用户选。
+
 ## 子 agent 模型选择（6 个 preset）
 
 - **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话）。要让
