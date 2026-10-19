@@ -111,6 +111,25 @@
  * of that: it lives on the standing scope, so a switch disposes it with the
  * composition that installed it.
  *
+ * (8) The route insurance: a Session that HAS an authorized route list may not
+ * delegate by omission. The official tool treats an omitted `provider`/`model` as
+ * "inherit the parent route" (`model-selection.ts:130-133`, "Pure inheritance
+ * remains outside this policy"), which is the sane default and the ONLY way to
+ * delegate when no list exists — but it also means a model that never calls
+ * `list_subagent_models` silently gets a child on the parent's route, which is
+ * the behaviour this insurance exists to stop. The guard therefore refuses a
+ * depth-0 `subagent` call that carries no route when the Session's durable
+ * policy projection (`ROUTE_POLICY_KEY`) holds at least one authorized route.
+ * Two properties keep it safe, and both matter more than the rule itself: it
+ * adds NO registration, NO listener and NO `tools/change` notification — it only
+ * reads the projection inside the guard that was already installed (point 6), so
+ * none of the 1.7.3-1.7.6 mount-order/collision failure modes can return — and
+ * it fails OPEN: a missing `sessionProjections` service, an unregistered key, or
+ * a projection read that throws means "no list", so omission stays allowed and
+ * the session degrades to the behaviour it had before this point. The rule is
+ * scoped to depth 0 by construction: the child branch does not admit `subagent`
+ * at all.
+ *
  * `run_code` is the PTC mode presentation transport, not a capability: under
  * `ptc` a model-direct call may ONLY name it — every other name is collapsed and
  * denied BEFORE the policy pipeline, guards included
@@ -144,11 +163,33 @@ export const DELEGATOR_TOOL = 'subagent'
  */
 export const ROUTE_LIST_TOOL = 'list_subagent_models'
 
-/** The names a top-level session of this preset may call (point 8). */
+/** The names a top-level session of this preset may call (point 6). */
 export const DELEGATOR_TOOLS = [DELEGATOR_TOOL, ROUTE_LIST_TOOL]
 
 /** PTC mode's model-direct transport (`packages/core/tools/src/ptc.ts:30`). */
 export const RUN_CODE = 'run_code'
+
+/**
+ * The projection key carrying a Session's authorized child routes
+ * (`@deepseek-ai/dsh-tool-subagent` `src/model-selection-state.ts:36-51`). That
+ * plugin registers the unit unconditionally and stores the exact route list once
+ * one is recorded; `null` means NO list — the opt-in is off, the Host list is
+ * empty, or a restored Session recorded no policy. The route insurance (point 8)
+ * reads it from the calling agent's Session at call time: the guard must not
+ * demand a named route from a Session that has none to name.
+ */
+export const ROUTE_POLICY_KEY = 'subagentModelSelectionPolicy'
+
+/**
+ * Whether a delegation call named an explicit route: `provider` and `model` both
+ * present as non-empty strings. The tool's own schema owns every other shape.
+ * @param args - the call's parsed arguments, as the registry materialized them.
+ * @returns whether the call carries the route the insurance demands (point 8).
+ */
+export function namedRoute(args) {
+  return typeof args?.provider === 'string' && args.provider.trim() !== ''
+    && typeof args?.model === 'string' && args.model.trim() !== ''
+}
 
 /**
  * The delegation half of a top-level session's persona, appended verbatim to the
@@ -169,6 +210,15 @@ export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', impo
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
   = 'This session is a delegator-only preset: `subagent` is the only tool that acts, and `list_subagent_models` only inspects the routes it may name. Describe the task to `subagent` instead of acting directly.'
+
+/**
+ * Reason the model reads when a Session that HAS an authorized route list
+ * delegates without naming one (point 8). The refusal is the only feedback a
+ * model that skipped `list_subagent_models` gets, so it has to name the lister
+ * and the two parameters to supply.
+ */
+const ROUTE_REQUIRED_DENIAL
+  = 'This session delegates only on an explicit route: call `list_subagent_models` for the routes it may name, then pass `provider` and `model` (plus `reasoning_effort` when you want one) to `subagent`. A delegation call without both is refused.'
 
 /** Reason the model reads when a read-only subagent names a tool it does not have. */
 const SUBAGENT_DENIAL
@@ -286,6 +336,34 @@ export function apply(ctx, config) {
   const subagentAllowed = new Set([...subagentTools, ROUTE_LIST_TOOL])
   const delegatorAllowed = new Set(DELEGATOR_TOOLS)
 
+  /**
+   * The authorized routes one calling agent's Session may name, or `undefined`
+   * when that Session has NO list (point 8): the opt-in is off, the Host list is
+   * empty, a restored Session recorded no policy, or this build serves no
+   * `sessionProjections`. Read per CALL, because the official plugin records the
+   * policy at install/creation time and a restore can end with none — a cached
+   * read taken when this row mounted would be wrong in both directions. This
+   * function is the whole of what the insurance adds to the call path: it
+   * registers nothing and notifies nothing.
+   * @param agent - the agent whose delegation call is being decided.
+   * @returns the route list, or nothing when omission must stay allowed.
+   */
+  const routePolicyOf = (agent) => {
+    const projections = ctx.get('sessionProjections')
+    const session = agent?.session
+    if (projections === undefined || session === undefined) return undefined
+    let policy
+    try {
+      policy = projections.stateOf(session, ROUTE_POLICY_KEY)
+    } catch (error) {
+      // Fail OPEN, never closed: an unreadable policy must leave the session able
+      // to delegate the way it could before this insurance existed.
+      warn(`reading the route policy of agent ${String(agent?.id)} failed: ${String(error)}`)
+      return undefined
+    }
+    return Array.isArray(policy) && policy.length > 0 ? policy : undefined
+  }
+
   // ONE guard for the whole preset, on the standing scope (point 6): a guard is
   // read from the CALLING agent's chain, so the delegation depth is what decides.
   // Installing it here — never from `agent/created` — is also what keeps this
@@ -293,9 +371,15 @@ export function apply(ctx, config) {
   installGuard(ctx.tools, (exec, called) => {
     const agent = exec?.agent
     if (agent === undefined) return undefined
-    return depthOf(agent) === 0
-      ? delegatorAllowed.has(called) ? undefined : DELEGATOR_DENIAL
-      : subagentAllowed.has(called) ? undefined : SUBAGENT_DENIAL
+    if (depthOf(agent) !== 0) {
+      return subagentAllowed.has(called) ? undefined : SUBAGENT_DENIAL
+    }
+    if (!delegatorAllowed.has(called)) return DELEGATOR_DENIAL
+    // Point 8: with a list to choose from, the delegation names its route. The
+    // lister itself is never affected, and a Session without a list keeps the
+    // official omit-to-inherit path.
+    if (called !== DELEGATOR_TOOL || routePolicyOf(agent) === undefined) return undefined
+    return namedRoute(exec?.arguments) ? undefined : ROUTE_REQUIRED_DENIAL
   }, warn)
 
   /** Agents whose persona this plugin already installed. */
