@@ -84,8 +84,10 @@ or remove them once a decision lands.
 
 ## 子 agent 模型选择（6 个 preset）
 
-- **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话）。要让
-  「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，本次刻意不做，先看实际使用情况。
+- **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话），5 个编程
+  preset 至今仍是如此：要让它们也「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，先看
+  实际使用情况。`chat-subagent` 已不再只靠提示词：1.8.0 起 standing guard 在 depth 0 直接拒绝不带 `provider`+`model`
+  的 `subagent` 调用（仅当会话的 `subagentModelSelectionPolicy` 投影里确实有授权路由；读不到策略时 fail open）。
 - **已确认的上游缺陷：切换 preset 时，新 preset 的 per-Agent 安装可能跑在旧 preset 的拆除之前。**
   2026-10-17 在 dev_web（DSH 检出，1.7.4→1.7.5 实测）用临时 `info` 诊断（打印每个 agent 的 preset 及其目录里
   `subagent`/`list_subagent_models` 是否可解析，测完已删）定案：
