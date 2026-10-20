@@ -2,13 +2,15 @@
 # derived from `presets/chat-agent.patch.yml`.
 #
 # The rule this preset exists to break: `chat-agent` can call nothing, this one
-# can call ONE thing that acts — `subagent`, the tool that creates a subagent to
-# carry the task out — plus the read-only `list_subagent_models` the
+# can call ONE thing that starts work — `subagent`, the tool that creates a
+# subagent to carry the task out — plus the read-only `list_subagent_models` the
 # `modelSelectionSettings` opt-in registers, which only reports the routes the
-# session may name. The delegated subagent is a real agent with a real
-# (read-only) tool set; the top-level session is the delegator. Its CATALOG holds
-# exactly those two names: a depth-0 catalog MASK hides the preset's inherited
-# rows from it, and the guard refuses every call outside the two.
+# session may name, and, on a deployment that mounts the agent-team bundle, the
+# two Team controls `list_agents` and `send_message` (the other seven Team tools
+# stay refused). The delegated subagent is a real agent with a real (read-only)
+# tool set; the top-level session is the delegator. A depth-0 catalog MASK hides
+# the preset's inherited rows from it (the own-layer Team rows cannot be hidden),
+# and the guard refuses every call outside those names.
 #
 # WHY NO RESTRICTION ON THE PRESET PLANE, AND WHY THE MASK IS ON THE AGENT. The
 # obvious shape — a preset-plane `ctx.tools.restrict({ allow: [] })` next to
@@ -25,8 +27,9 @@
 # because its scope parent is the standing scope, not the parent Agent's scope
 # (`agent-preset-registry/src/mount.ts:119-127`). It is a CATALOG mask, not
 # enforcement: `restrict()` hides names, and the standing GUARD (point 6)
-# refuses every call outside the two. `delegator.mjs` carries the mechanism with
-# source pointers.
+# refuses every call outside those names (the two delegation tools plus the two
+# Team controls a deployment's agent-team bundle provides). `delegator.mjs`
+# carries the mechanism with source pointers.
 #
 # WHY THE MASK INSTALLS ONE MACROTASK LATE. Measured, 1.7.3 live on `dev_web`:
 # `restrict()` notifies `tools/change`, and the official delegation plugin
@@ -58,7 +61,7 @@
 # those names, and a name that is not registered is simply not in the catalog, so
 # a missing tool costs that tool and never the delegation.
 #
-# THE ONE TOOL THAT ACTS. `@deepseek-ai/dsh-tool-subagent` mounts one
+# THE ONE TOOL THAT STARTS WORK. `@deepseek-ai/dsh-tool-subagent` mounts one
 # model-facing delegation tool per instance, on the `spawn` provider (a fresh
 # child that never sees this conversation, so a task prompt must stand alone).
 # DSH 0.2.1 deleted `backgroundMode` and `enableRunInBackground` outright: every
@@ -134,7 +137,7 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "顶层目录只有 subagent 与 list_subagent_models（可为子 agent 指定模型）；其余工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "顶层只放行 subagent、list_subagent_models 与部署提供的 list_agents/send_message（可为子 agent 指定模型）；其余工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
         plugins:
           # The delegation guard, the depth-0 catalog mask and the delegator
           # persona. `presetId` must equal this declaration's `id` (it is what

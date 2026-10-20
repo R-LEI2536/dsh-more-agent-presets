@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.1] - 2026-10-20
+
+### Changed (`chat-subagent`'s top level may call the deployment's Team controls)
+
+- **`list_agents` and `send_message` are now admitted at depth 0.** The delegation guard's root branch allowed only `subagent` and the read-only `list_subagent_models`; on a profile that mounts `@deepseek-ai/dsh-experimental-agent-team-profile` the nine Team tools still appear in a `chat-subagent` session's catalog (they are registered in the agent's OWN layer, which no restriction filters), and every call used to be refused. `TEAM_CONTROL_TOOLS` in `presets/chat-subagent/delegator.mjs` now admits the two control names; the other seven (`spawn_teammate`, `wait_agent`, `interrupt_agent`, `team_task_*`) stay refused, as does everything else.
+- **No registration, listener or `tools/change` was added.** The names exist only where the deployment's team bundle registers them, on the own layer the depth-0 mask cannot hide; a profile without that bundle simply has no such tool, so a guard entry for an absent name is inert. The 1.7.3–1.7.6 mount-order/collision failure modes cannot return.
+- **Team semantics are not delegation semantics.** They list and message Team members; the delegated `subagent` child is not a Team member, so it can neither be listed nor continued through them (measured: `active teammate … not found`). `presets/chat-subagent/delegation-note.md` says this outright instead of promising "two tools in the catalog".
+- **The child branch is unchanged.** A delegated child still calls only its declared read-only list plus the lister; both new names are refused there.
+- **Checks and docs.** `check-delegator.mjs` pins the new root allow-list, the seven still-refused Team names, the child's refusal of both controls, and the inert-allowed case on a deployment that registers neither; the two READMEs, `CONTEXT.md`, `TODO.md` and the delegation note describe the Team boundary. `check-delegator`, `check-subagent-model-selection`, `check-dsh-021-contract` and `check-no-tools` stay green.
+
 ## [1.8.0] - 2026-10-19
 
 ### Changed (the bundle now targets DSH 0.2.1-rc.2)

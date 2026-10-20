@@ -2,10 +2,13 @@
  * chat-subagent — the delegation guard and the delegator persona.
  *
  * The preset's invariant: a TOP-LEVEL session's CATALOG holds only the two
- * own-layer delegation names — `subagent`, the one tool that acts, and the
- * read-only `list_subagent_models` the `modelSelectionSettings` opt-in
- * registers. The delegated subagent may call only the read-only names its
- * declaration lists.
+ * own-layer delegation names — `subagent`, the one tool that STARTS work, and
+ * the read-only `list_subagent_models` the `modelSelectionSettings` opt-in
+ * registers. On a deployment that mounts the agent-team bundle it also lists
+ * that bundle's nine Team tools (own-layer registrations no restriction can
+ * hide); the guard admits exactly two of them, `list_agents` and `send_message`,
+ * and refuses the rest (point 6). The delegated subagent may call only the
+ * read-only names its declaration lists.
  * Enforcement is ONE standing guard (point 6). The catalog is narrowed by one
  * per-agent depth-0 `restrict({ allow: [] })` mask (point 5), which is not
  * enforcement and never reaches a delegated child.
@@ -83,16 +86,21 @@
  * agent's chain (`guardReason()` walks `chainLayers(exec.agent)`,
  * `packages/core/tools/src/index.ts:1145-1154`), so one standing install covers
  * the root session and every delegated child of this preset, and the delegation
- * depth decides which names pass — root: `subagent` and the lister; child: its
- * declared read-only names and the lister. It also closes the plane no
- * restriction could reach: registrations in an agent's OWN layer are exempt from
- * restrictions, and on a profile that mounts
+ * depth decides which names pass — root: `subagent`, the lister, and the two
+ * Team controls; child: its declared read-only names and the lister. It also
+ * closes the plane no restriction could reach: registrations in an agent's OWN
+ * layer are exempt from restrictions, and on a profile that mounts
  * `@deepseek-ai/dsh-experimental-agent-team-profile` those are nine Team tools
  * for every root agent (`roster.tryMembership()` fabricates a lead membership;
- * see `presets/chat-agent/no-tools.mjs` for the measurement). A guard is
- * monkey-proof: it runs after `tools/pre-execute`, so a name the model produces
- * anyway is refused. A call that carries no agent keeps the registry's own
- * behaviour and is left alone.
+ * see `presets/chat-agent/no-tools.mjs` for the measurement). The depth-0 branch
+ * therefore ADMITS two of those nine names — `list_agents` and `send_message` —
+ * and refuses the other seven like everything else. Allowing them registers
+ * nothing: the names exist only where the deployment's Team bundle registers
+ * them, on the own layer the mask cannot filter, and a profile without that
+ * bundle simply has no such tool, so a guard entry for an absent name is inert.
+ * A guard is monkey-proof: it runs after `tools/pre-execute`, so a name the
+ * model produces anyway is refused. A call that carries no agent keeps the
+ * registry's own behaviour and is left alone.
  *
  * (7) The persona is registered on an AGENT's scope, which outlives the
  * composition that asked for it, so BOTH directions of a preset switch must be
@@ -163,8 +171,23 @@ export const DELEGATOR_TOOL = 'subagent'
  */
 export const ROUTE_LIST_TOOL = 'list_subagent_models'
 
+/**
+ * The two Team controls a TOP-LEVEL session may call when the deployment's
+ * agent-team bundle registers them: `list_agents` reports Team members and
+ * `send_message` messages one of them. They are not this bundle's rows and are
+ * not registered here — on a profile that mounts
+ * `@deepseek-ai/dsh-experimental-agent-team-profile` they land in every root
+ * Agent's OWN layer, which no restriction filters, so the depth-0 catalog mask
+ * cannot hide them; this guard is what decides whether their call runs. They
+ * address Team members, NOT a delegated `subagent` child (a child is not a Team
+ * member), which is why the delegation note says so explicitly. A profile
+ * without that bundle has no such names, and a guard entry for a name nothing
+ * registers is inert.
+ */
+export const TEAM_CONTROL_TOOLS = ['list_agents', 'send_message']
+
 /** The names a top-level session of this preset may call (point 6). */
-export const DELEGATOR_TOOLS = [DELEGATOR_TOOL, ROUTE_LIST_TOOL]
+export const DELEGATOR_TOOLS = [DELEGATOR_TOOL, ROUTE_LIST_TOOL, ...TEAM_CONTROL_TOOLS]
 
 /** PTC mode's model-direct transport (`packages/core/tools/src/ptc.ts:30`). */
 export const RUN_CODE = 'run_code'
@@ -199,17 +222,20 @@ export function namedRoute(args) {
  * preset loudly, never leave the session with a silent empty half. That file IS
  * the prompt, verbatim: no heading, no comment, nothing that is not meant for
  * the model. The picked text is the session's ENTIRE system prompt and the
- * subagent tool is its only capability, so the note has to say all of this:
- * nothing else tells the model that the child is blind to the conversation, and
- * nothing else tells it that the child is read-only. The capabilities it names
- * are the SHIPPED default; a declaration that widens `subagentTools` must revise
- * this file with it, or override the note from the row's `delegationNote`.
+ * subagent tool is its only capability that STARTS work, so the note has to say
+ * all of this: nothing else tells the model that the child is blind to the
+ * conversation, nothing else tells it that the child is read-only, and nothing
+ * else tells it that the deployment's Team controls (`list_agents`,
+ * `send_message`) address Team members rather than that child. The capabilities
+ * it names are the SHIPPED default; a declaration that widens `subagentTools`
+ * must revise this file with it, or override the note from the row's
+ * `delegationNote`.
  */
 export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', import.meta.url), 'utf8').trim()
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
-  = 'This session is a delegator-only preset: `subagent` is the only tool that acts, and `list_subagent_models` only inspects the routes it may name. Describe the task to `subagent` instead of acting directly.'
+  = 'This session is a delegator-only preset: `subagent` is the only tool that starts work; `list_subagent_models` only inspects the routes it may name, and `list_agents` / `send_message` only address Team members when the deployment provides them. Describe the task to `subagent` instead of acting directly.'
 
 /**
  * Reason the model reads when a Session that HAS an authorized route list
@@ -334,6 +360,9 @@ export function apply(ctx, config) {
   // refused — `maxDepth: 1` is the recursion budget — and the read-only route
   // lister is allowed, because it changes nothing.
   const subagentAllowed = new Set([...subagentTools, ROUTE_LIST_TOOL])
+  // Depth 0 also admits the two Team controls (point 6); the child branch above
+  // deliberately does not, so a delegated child can neither list nor message
+  // Team members even where the deployment registers those tools.
   const delegatorAllowed = new Set(DELEGATOR_TOOLS)
 
   /**
