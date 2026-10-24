@@ -21,9 +21,10 @@
  *   mask test below pins with `await tick()`.
  * - A guard is read from the CALLING agent's chain, so the standing install
  *   covers the root session and every child, and the delegation depth decides
- *   which names pass. That branch is what keeps the child read-only: depth 0
- *   also admits the two Team controls a deployment's agent-team bundle
- *   registers (`list_agents`, `send_message`), and the child branch does not.
+ *   which names pass. depth 0 admits `subagent` and the lister; the child branch
+ *   admits its declared read-only names and the lister. A deployment's Team
+ *   bundle still LISTS its nine tools in the root catalog (own-layer
+ *   registrations, which no restriction filters), but neither branch admits one.
  *
  * The persona is also per agent: the root session gets this preset's whole
  * prompt, a child only gets its route logged. Persona and mask must both be
@@ -56,11 +57,21 @@ import {
   ROUTE_LIST_TOOL,
   ROUTE_POLICY_KEY,
   RUN_CODE,
-  TEAM_CONTROL_TOOLS,
 } from './presets/chat-subagent/delegator.mjs'
 
 /** The seven names the declaration ships as the subagent's default. */
 const SUBAGENT_TOOLS = ['read', 'glob', 'grep', 'read_image', 'list_directory', 'todo_write', 'job_list']
+
+/**
+ * The nine Team tools a profile's agent-team bundle registers in a root agent's
+ * OWN layer. They stay visible in that catalog — a restriction cannot filter the
+ * own layer — and this preset refuses every one of them, so none is ever listed
+ * as allowed.
+ */
+const TEAM_TOOLS = [
+  'list_agents', 'send_message', 'wait_agent', 'spawn_teammate', 'interrupt_agent',
+  'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
+]
 
 const ORDERS = { DEPLOYMENT_PERSONA_PREFIX: 100 }
 
@@ -273,25 +284,24 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   const top = fakeAgent({ id: 'top' })
   const child = fakeAgent({ id: 'child', runtimeDepth: 1 })
 
-  // Root: the tool that starts work, the read-only lister, and the two Team
-  // controls a deployment's agent-team bundle registers. Nothing else.
-  assert.deepEqual(DELEGATOR_TOOLS, [DELEGATOR_TOOL, ROUTE_LIST_TOOL, ...TEAM_CONTROL_TOOLS])
+  // Root: the tool that starts work and the read-only lister. Nothing else —
+  // including every Team tool a deployment's bundle lists in this catalog.
+  assert.deepEqual(DELEGATOR_TOOLS, [DELEGATOR_TOOL, ROUTE_LIST_TOOL])
   for (const name of DELEGATOR_TOOLS) assert.equal(guard({ name, agent: top }), undefined)
   assert.equal(guard({ name: RUN_CODE, agent: top }), undefined)
   for (const name of [
     'read', 'write', 'edit', 'bash',
-    'spawn_teammate', 'wait_agent', 'interrupt_agent',
-    'team_task_create', 'team_task_get', 'team_task_list', 'team_task_update',
+    ...TEAM_TOOLS,
     'todo_write',
   ]) {
     assert.match(guard({ name, agent: top }), /`subagent`/)
   }
 
   // Child: its declared read-only names plus the lister; no delegation and no
-  // Team control of any kind.
+  // Team tool of any kind.
   for (const name of [...SUBAGENT_TOOLS, ROUTE_LIST_TOOL]) assert.equal(guard({ name, agent: child }), undefined)
   assert.equal(guard({ name: RUN_CODE, agent: child }), undefined)
-  for (const name of ['write', 'edit', 'bash', DELEGATOR_TOOL, 'spawn_teammate', ...TEAM_CONTROL_TOOLS]) {
+  for (const name of ['write', 'edit', 'bash', DELEGATOR_TOOL, ...TEAM_TOOLS]) {
     assert.match(guard({ name, agent: child }), /read-only/)
   }
   // Depth is monotone, so a grandchild is on the child's branch, not the root's.
@@ -461,11 +471,10 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   assert.equal(guard({ name: 'read_image', agent: worker }), undefined)
   assert.equal(guard({ name: 'list_directory', agent: worker }), undefined)
   assert.equal(typeof guard({ name: 'bash', agent: worker }), 'string')
-  // The two Team controls are ALLOWED at depth 0 even when this deployment
-  // registers no such tool: a guard entry for an absent name is inert, and the
-  // model simply finds no tool to call. On a profile that mounts the agent-team
-  // bundle they exist and their calls run.
-  for (const name of TEAM_CONTROL_TOOLS) assert.equal(guard({ name, agent: fakeAgent({ id: 'top-lite' }) }), undefined)
+  // A Team name is refused at depth 0 whether or not this deployment registers
+  // it: the guard judges by name, and a name no row registered is simply absent
+  // from the catalog. Nothing is probed either way.
+  for (const name of TEAM_TOOLS) assert.match(guard({ name, agent: fakeAgent({ id: 'top-lite' }) }), /`subagent`/)
   assert.deepEqual(host.warnings, [])
 }
 

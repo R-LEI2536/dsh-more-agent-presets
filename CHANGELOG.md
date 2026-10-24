@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.2] - 2026-10-24
+
+### Changed (`chat-subagent` refuses the deployment's Team tools again)
+
+- **`list_agents` and `send_message` are refused at depth 0 again.** 1.8.1 admitted them because the nine Team tools stay VISIBLE in a `chat-subagent` catalog — they are registered in the root agent's own layer, which no restriction filters. Measured on a live session (`0c308ac9`, turn 8, `chat-subagent` on `gpt-6-sol`), admitting them taught the model to treat a delegated `subagent` as a pollable teammate: eight `wait_agent` calls refused by the guard, seven `list_agents` calls that reported only the session itself, two self-addressed `send_message` calls (`TEAM_SELF_MESSAGE`), and three children started for one task while the first was still running. `TEAM_CONTROL_TOOLS` and its export are gone; `DELEGATOR_TOOLS` is now `[subagent, list_subagent_models]`.
+- **The refusal text names the situation instead of repeating the rule.** `DELEGATOR_DENIAL` now says the Team tools a catalog may list address Team members, that a delegated subagent is not one, and that its report arrives by itself — so the caller should end its reply rather than poll. The child branch is unchanged; the route insurance is unchanged.
+- **Checks and docs.** `check-delegator.mjs` pins `DELEGATOR_TOOLS` to the two names, refuses all nine Team names on both branches, and asserts the same refusal at depth 0 on a deployment that registers none of them. The two READMEs, `CONTEXT.md`, `TODO.md`, the preset header, its declaration description and `presets/chat-subagent/delegation-note.md` no longer list the two Team controls among the session's callable tools. `check-delegator`, `check-subagent-model-selection`, `check-dsh-021-contract` and `check-no-tools` stay green.
+
 ## [1.8.1] - 2026-10-20
 
 ### Changed (`chat-subagent`'s top level may call the deployment's Team controls)

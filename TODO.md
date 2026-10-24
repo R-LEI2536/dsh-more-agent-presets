@@ -55,9 +55,11 @@ or remove them once a decision lands.
   两边互斥的根因是那条核心规则：`chat-subagent` 顶层目录刻意只有 `subagent` + `list_subagent_models`
   （`presets/chat-subagent/delegator.mjs` 的 `DELEGATOR_TOOLS`），而「续」要 `send_message`、
   「收后台结果」要 `job_output`。
-- **2026-10-20 更新（1.8.1）：`chat-subagent` 顶层已放行部署提供的 Team 版 `list_agents` / `send_message`，
-  但这不是本条要的“续”。** 那两个名字来自 `@deepseek-ai/dsh-experimental-agent-team-profile`，只列/发 Team
-  成员；`subagent` 派出的子 agent 不是 Team 成员，列不到也发不进（实测 `active teammate … not found`）。
+- **2026-10-20 → 2026-10-24 更新（1.8.1 放行，1.8.2 收回）：`chat-subagent` 顶层曾放行 Team 版
+  `list_agents` / `send_message`，现在 9 个 Team 工具一律拒绝。** 实测（session `0c308ac9` turn 8）放行这两个
+  名字只教会模型把 `subagent` 当成可轮询的队友：8 次 `wait_agent` 被拒、7 次 `list_agents` 只列出自己、2 次给
+  自己发消息、同一任务重复派出 3 个 child。它们来自 `@deepseek-ai/dsh-experimental-agent-team-profile`，只列/发
+  Team 成员；`subagent` 派出的子 agent 不是 Team 成员，列不到也发不进（实测 `active teammate … not found`）。
   真正的“续聊自己派出的子 agent”仍需要 control 工具（`@deepseek-ai/dsh-tool-subagent-control` 的
   `agent_id` 版），且在挂了 agent-team bundle 的 profile 上还要先解决同名遮蔽——所以 durable 仍按本节另开
   preset，与 1.8.1 无关。
