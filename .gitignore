@@ -55,9 +55,6 @@ PUBLISH-CHECKLIST.md
 # Reference files (only the workspace-root `ref/`, not per-preset `ref/` subdirs)
 /ref/
 
-# Long-term memory (local-only)
-.reme/
-
 # Local sandbox caches / scratch tools from upstream exploration
 .cargo-home/
 gen-codex-prompt.mjs
