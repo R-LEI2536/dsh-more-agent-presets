@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.3] - 2026-10-27
+
+### Changed (`chat-subagent`'s prompt states the tool boundary and the lister's two-step shape)
+
+- **The delegation note now forbids every catalog name outside the two callable ones.** Measured on a live `chat-subagent` session (`cf3fd918-a9fa-4215-a97c-385052a9f2e1`, `/home/hive/Documents/GTA`, turn 1): the deployment's nine Team tools stay listed in the catalog because they are registered in the root Agent's own layer, which no restriction filters; the note only said which tools the session has, so the model called `list_agents` and the standing guard refused it. `presets/chat-subagent/delegation-note.md` now says outright: do not call any other tool, even if it appears in the catalog.
+- **The note now states that the first `list_subagent_models` call does not show model ids.** In the same session that call returned `opencode-chat — opencode-chat` (the provider id and its display name), and the model passed the display name as the model id; the delegation was refused upstream with `child LLM route "opencode-chat/opencode-chat" is not allowed for this Session` (`@deepseek-ai/dsh-tool-subagent` `src/model-selection.ts:152`), which is not this plugin's guard — its route denial covers only an omitted route. The note now says the no-argument call lists providers only and a `provider`-scoped call lists exact `provider/model`; the model's next provider-scoped call returned `opencode-chat/deepseek-v4.1-flash` and the retry succeeded.
+- **`DELEGATOR_DENIAL` is trimmed to the rule.** The old message also explained Team semantics and the asynchronous report; with the boundary now in the note, the refusal keeps only the sentence that names the two callable tools: "This session is a delegator-only preset: `subagent` is the only tool that starts work; `list_subagent_models` only inspects the routes it may name."
+- **No code path changed.** The guard, the route insurance, the depth-0 catalog mask and the preset declaration are untouched; this release changes one prompt file and one denial string. `check-delegator` and `check-subagent-model-selection` stay green.
+- **Deployment note:** presets load at host startup and the delegation note is read when the row mounts, so an installed snapshot needs a re-resolve and host restart; a browser refresh is not enough.
+
 ## [1.8.2] - 2026-10-24
 
 ### Changed (`chat-subagent` refuses the deployment's Team tools again)
