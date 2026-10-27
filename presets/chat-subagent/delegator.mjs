@@ -233,7 +233,7 @@ export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', impo
 
 /** Reason the model reads when it names a tool a top-level session does not have. */
 const DELEGATOR_DENIAL
-  = 'This session is a delegator-only preset: `subagent` is the only tool that starts work; `list_subagent_models` only inspects the routes it may name. The Team tools this catalog may list — `list_agents`, `send_message`, `wait_agent`, `spawn_teammate`, `interrupt_agent`, `team_task_*` — address Team members, and a delegated subagent is not one: its report arrives by itself as a new message. After a `subagent` call, end your reply and wait for that message instead of polling. Describe the task to `subagent` instead of acting directly.'
+  = 'This session is a delegator-only preset: `subagent` is the only tool that starts work; `list_subagent_models` only inspects the routes it may name.'
 
 /**
  * Reason the model reads when a Session that HAS an authorized route list
