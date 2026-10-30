@@ -42,11 +42,11 @@
 <details class="node"><summary>事件与下一步 / 结束 <span class="impact mid">中 · P1</span></summary><p>step/end、turn/end 事件落入 session；有 inbox 消息则在新 controller 下继续，否则回到 idle。</p><div class="meta">packages/core/agent-loop/src/agent.ts:357-397</div><span class="evidence">源码已核验</span></details>
 </div></div>
 <div class="lane preset"><div class="lane-title">当前 Codex preset<small>DSH 上的行为输入层</small></div><div class="nodes">
-<details class="node"><summary>Preset 声明与插件挂载 <span class="impact mid">中 · P1</span></summary><p>preset 声明 persona、agent instructions、静态 sections 和三个注入插件；声明不等于部署中已挂载。</p><div class="meta">presets/codex-coding-agent.patch.yml:9-44,351-378</div><span class="evidence pending">声明已核验；运行时挂载待验证</span></details>
+<details class="node"><summary>Preset 声明与插件挂载 <span class="impact mid">中 · P1</span></summary><p>preset 声明 persona、agent instructions、静态 sections 和三个注入插件；声明不等于部署中已挂载。</p><div class="meta">presets/codex-coding-agent.patch.yml:9-44,351-378</div><span class="evidence">声明已核验；实机会话已确认三个块注入（轨迹基线）；部署 schema 未核验</span></details>
 <details class="node"><summary>静态 prompt sections <span class="impact strong">强 · P0</span></summary><p>十个 700–709 段提供身份、工作方式、工具指南等长期指令，形成 DSH system prompt 的一部分。</p><div class="meta">presets/codex-coding-agent.patch.yml:43-349<br>presets/codex-coding-agent/prompt-sections.mjs:18-69</div><span class="evidence">源码已核验</span></details>
-<details class="node"><summary>逐步权限注入 <span class="impact strong">强 · P0</span></summary><p>检查 sandbox 与 approval hash；变化时将权限 XML 作为 user message 追加。插件旧注释声称 DSH 不支持 developer role，需以 DSH 当前实现重新核对。</p><div class="meta">presets/codex-coding-agent/codex-permissions.mjs:47-78<br>DSH packages/llm/llm/src/message.ts:157-159,235-238</div><span class="evidence pending">user role 已核验；developer 支持已有源码证据</span></details>
-<details class="node"><summary>协作模式注入 <span class="impact strong">强 · P0</span></summary><p>当前插件按 hash 仅首次追加默认 collaboration mode；其注释称计划模式不可达的历史决策应重新验证。</p><div class="meta">presets/codex-coding-agent/codex-collab-mode.mjs:83-109</div><span class="evidence pending">实现已核验；计划模式状态待验证</span></details>
-<details class="node"><summary>环境上下文注入 <span class="impact strong">强 · P0</span></summary><p>环境插件注入 cwd、shell、date、timezone；同时 DSH 另有 working-directory context，实际重复内容与值一致性待核对。</p><div class="meta">presets/codex-coding-agent/codex-environment.mjs:65-99<br>DSH packages/core/system-prompt/src/index.ts:170-179</div><span class="evidence pending">注入实现已核验；最终消息形态待验证</span></details>
+<details class="node"><summary>逐步权限注入 <span class="impact strong">强 · P0</span></summary><p>检查 sandbox 与 approval hash；变化时将权限 XML 作为 user message 追加。插件旧注释声称 DSH 不支持 developer role，需以 DSH 当前实现重新核对。</p><div class="meta">presets/codex-coding-agent/codex-permissions.mjs:47-78<br>DSH packages/llm/llm/src/message.ts:157-159,235-238</div><span class="evidence">顺序与注入：可执行检查；角色：源码（本 preset 用 user-role，上游为 developer）</span></details>
+<details class="node"><summary>协作模式注入 <span class="impact strong">强 · P0</span></summary><p>当前插件按 hash 仅首次追加默认 collaboration mode；其注释称计划模式不可达的历史决策应重新验证。</p><div class="meta">presets/codex-coding-agent/codex-collab-mode.mjs:83-109</div><span class="evidence">实现与顺序：可执行检查；计划模式可达性：未实证</span></details>
+<details class="node"><summary>环境上下文注入 <span class="impact strong">强 · P0</span></summary><p>环境插件注入 cwd、shell、date、timezone；同时 DSH 另有 working-directory context，实际重复内容与值一致性待核对。</p><div class="meta">presets/codex-coding-agent/codex-environment.mjs:65-99<br>DSH packages/core/system-prompt/src/index.ts:170-179</div><span class="evidence">顺序与落点：可执行检查；cwd 重复列为已知差异</span></details>
 <details class="node"><summary>工具定义与实际 schema <span class="impact strong">强 · P0</span></summary><p>YAML 中有工具声明；模型可见性取决于最终挂载并交给 request 的 tool schema。</p><div class="meta">presets/codex-coding-agent.patch.yml:465-798<br>DSH packages/core/agent-loop/src/agent.ts:290-295</div><span class="evidence pending">声明已核验；部署 schema 待验证</span></details>
 </div></div>
 </div>
@@ -74,6 +74,38 @@
 </div>
 </div>
 </section>
+<section class="section" id="step-order"><h2>单步消息顺序与角色</h2><p class="section-lead">只看一条被接纳的 step：模型按什么顺序看到哪些消息。分三段——Codex 实际写入历史的顺序、本 preset 能保证的顺序、由 DSH 核心或其它插件决定因而不在 preset 手里的落点。证据标注：<strong>源码</strong> = 已按行号核对；<strong>可执行检查</strong> = <code>node check-codex-world-state-order.mjs</code> 的断言；<strong>未实证</strong> = 仍需真实会话或适配层日志。</p>
+<div class="assembly">
+<div class="column"><h3 style="color:var(--codex)">原生 Codex（首轮）</h3>
+<div class="layer"><strong>1. developer 聚合消息 <span class="rank">源码</span></strong><p>model instructions → host_skills（扩展 section，插到 Permissions 之前）→ <code>&lt;permissions instructions&gt;</code> → <code>&lt;collaboration_mode&gt;</code> → persistent mode 等 developer-role 片段合并为一条消息。</p><code>turn.rs:302 先于 :388 · world_state.rs:220-311</code><span class="source">host_skills 插位：context/world_state/mod.rs:491-497 · 片段合并：context_manager/updates.rs:21-49</span></div>
+<div class="layer"><strong>2. user 聚合消息 <span class="rank">源码</span></strong><p>AGENTS.md（user-role）位于 <code>&lt;environment_context&gt;</code> 之前，两者合并为同一条 user 消息；cwd 就在 environment 里。</p><code>AGENTS.md → environment_context</code><span class="source">agents_md.rs:40-42 · environment.rs:210 · world_state.rs:220/303</span></div>
+<div class="layer"><strong>3. 用户输入</strong><p>初始 world state 落盘之后才记录 input。</p><code>turn.rs:388</code><span class="source">源码</span></div>
+<div class="layer"><strong>4. skills / plugin 注入 <span class="rank">源码</span></strong><p>build_skills_and_plugins 的结果在输入之后落盘。</p><code>turn.rs:429-436</code></div>
+<div class="layer"><strong>后续 step ≠ 首轮</strong><p>回合起点只记差分，仍先于输入（:302 先于 :388）；循环内 mid-step 差分在 pending input 之后（:487 先于 :555）。</p><code>首轮全量 · 后续差分</code></div>
+</div>
+<div class="column"><h3 style="color:var(--preset)">本 preset 能保证</h3>
+<div class="layer"><strong>四段相对顺序 <span class="rank">可执行检查</span></strong><p>一条被接纳的 step 里：permissions → collaboration_mode → environment → required runtime-context（working-directory 快照），然后才是用户消息。</p><code>insertWorldState / orderPrePromptRun</code><span class="source">check-codex-world-state-order.mjs：三个真实插件 + waterfall 组合</span></div>
+<div class="layer"><strong>不变量 <span class="rank">可执行检查</span></strong><p>三个 listener 无论以什么顺序写入都收敛到该顺序；不移动、不丢弃其它消息；runtime-context 占位对象保持身份，admission 在原位置换成现算文本。</p><code>agent.ts:425-440（仅 admission 才产生的快照仍追加在末尾 :438-440）</code></div>
+<div class="layer"><strong>diff 短路 <span class="rank">源码</span></strong><p>per-session hash 不变则不再注入；变化时整块重发，历史里的旧块不撤回。</p><code>codex-permissions.mjs:46-78 · codex-environment.mjs:52-100</code><span class="source">A→B→A 现状由检查固定，撤回实现单独立项</span></div>
+</div>
+<div class="column"><h3 style="color:var(--dsh)">其它插件决定 / preset 不控制</h3>
+<div class="layer"><strong>AGENTS.md 落点</strong><p>在 DSH 当前组合里 <code>dsh-agent-instructions</code> 把 AGENTS.md 插在 claimed 批次之后，即用户消息之后。能否靠 listener 排序提前到消息前，未做运行时验证，不能断言不可移动。</p><code>用户消息之后（当前组合）</code><span class="source">packages/context/agent-instructions/src/index.ts:355-358</span></div>
+<div class="layer"><strong>skill catalog 落点</strong><p><code>dsh-tool-skill</code> 在每步最外层 append；它有自己的 digest/重发语义（catalog 变化才重发），不是单纯排序问题。</p><code>消息末尾（当前组合）</code><span class="source">packages/skill/tool-skill/src/index.ts:215-252</span></div>
+<div class="layer"><strong>time context</strong><p>prepend 注册，最后 append。</p><code>messages 末尾</code><span class="source">packages/context/time-context/src/index.ts:185-224</span></div>
+<div class="layer"><strong>角色与 cwd 重复</strong><p>三个块在本 preset 用 user-role（Codex 的 permissions / collaboration 是 developer）；<code>&lt;cwd&gt;</code> 与 required working-directory 快照内容重叠，两者都会发给模型。</p><code>user-role × 3 · cwd 出现两次</code></div>
+</div>
+</div>
+<p class="callout"><strong>兼容范围：</strong>preset 只对齐上述四条消息的相对顺序，不是完整复刻 Codex 的单步消息序列；也不再为“完整对齐”搬动其它插件的消息。developer role、AGENTS 落点、skill catalog 落点、cwd 重复、world-state 撤回都列为已知差异，见下表。</p>
+<div class="table-wrap"><table><thead><tr><th>已知差异</th><th>原生 Codex</th><th>当前 DSH preset</th><th>状态 / 证据</th></tr></thead><tbody>
+<tr><td>块角色</td><td>permissions、collaboration_mode 为 developer-role；environment 为 user-role</td><td>三个块全部 user-role</td><td>已知差异，本轮不改 · 源码（插件 + llm message 工厂）</td></tr>
+<tr><td>AGENTS.md 落点</td><td>user 聚合消息内、environment_context 之前</td><td>在当前组合中位于用户消息之后</td><td>已知差异；能否通过 listener 排序提前未实证 · 源码 + 检查（stand-in）</td></tr>
+<tr><td>skill catalog 落点</td><td>host_skills 为 developer section，在 Permissions 之前</td><td>每步最外层 append，位于消息末尾</td><td>已知差异；有独立重发语义，不动 · 源码</td></tr>
+<tr><td>cwd 重复</td><td>仅 environment_context 携带 cwd</td><td>environment_context 与 required working-directory 快照各一份</td><td>已知差异；required 无法被 suppression 去掉 · 源码（system-prompt/src/index.ts:586-592）+ 检查</td></tr>
+<tr><td>world-state 撤回</td><td>按 diff 渲染，A→B→A 历史里不保留过期片段</td><td>A→B→A 各追加一条，旧片段仍在历史</td><td>已知差异；是否实现 replace 单独立项（先固定现状，再评估风险）· 检查</td></tr>
+<tr><td>首轮 vs 后续 step</td><td>首轮全量；后续只差分，mid-step 差分在 pending input 之后</td><td>每条被接纳 step 都把四段放到用户消息之前</td><td>已知差异；preset 只镜像 turn-start 位置 · 源码</td></tr>
+</tbody></table></div>
+<p class="section-lead"><strong>可执行检查的覆盖边界：</strong><code>check-codex-world-state-order.mjs</code> 用三个真实插件 + 外围包的 stand-in 断言上述顺序、后置注入的相对位置与占位对象身份；它不覆盖真实外围包的内部条件、admission 替换、适配层 <code>GenerateOptions.messages</code>，也不替代 live 会话日志。</p>
+</section>
 <section class="section"><h2>影响模型行为的主要因素</h2><p class="section-lead">优先验证模型最终收到的请求，而不是只比较源码里的 prompt 文案。下表优先级表示复刻次序，不代表已实现。</p>
 <div class="table-wrap"><table><thead><tr><th>优先级</th><th>因素</th><th>为什么影响行为</th><th>当前证据 / 下一步</th></tr></thead><tbody>
 <tr><td class="priority">P0</td><td>消息角色与通道</td><td>system/developer/user 的权重、边界和来源不同；同一文本角色变化会改变指令层级。</td><td>permissions / collaboration 插件当前用 user；Codex 对应 developer。DSH 已支持 developer message。核对插件可否发 developer。</td></tr>
@@ -86,8 +118,8 @@
 <tr><td class="priority">P3</td><td>生命周期事件与 UI 表达</td><td>主要影响可观察性和交互边界，通常不如模型可见上下文直接。</td><td>根据任务类型再评估；仅有事件而未进入模型输入的差异通常不先复刻。</td></tr>
 </tbody></table></div>
 </section>
-<section class="section"><h2>复刻顺序建议</h2><div class="callout"><p><strong>P0 · 先确认最终请求。</strong> 采集一次真实 DSH 请求的有序消息数组、角色、工具 schema 和参数，然后与 Codex 请求结构对照。先把 permissions/collaboration 的 developer 角色差异查实。</p><p><strong>P0 · 做状态转换测试。</strong> 验证 sandbox/approval、协作模式、cwd 变化及撤回时，旧 fragment 是否仍可影响后续模型步。</p><p><strong>P0 · 确认事实性上下文。</strong> 检查真实 AGENTS.md 正文、working-directory context 和 environment XML 的最终重复情况。</p><p><strong>P1 · 对齐工具和执行边界。</strong> 核实挂载后的工具列表、并行/独占语义、工具结果回填、失败恢复与继续策略。</p><p><strong>P2 · 再调静态文案。</strong> 确保 personality 与上游 e6de6a2 现状一致；之后再处理静态指令措辞、顺序和不必要的重复。</p></div></section>
-<footer class="foot">源码根目录：Codex = <code>ref/codex-main/</code>（浅克隆，e6de6a2）；DSH = <code>/home/hive/projects/dsh-plugin_dev/deepseek-harness-dsh-v0.2.1-rc.2/</code>；preset = 当前工作区。行号是实现时核对的定位点，DSH 运行时行为及部署状态仍需在目标部署验证。页面无外部脚本、字体、样式或网络依赖。</footer>
+<section class="section"><h2>复刻顺序建议</h2><div class="callout"><p><strong>P0 · 先确认最终请求。</strong> 采集一次真实 DSH 请求的有序消息数组、角色、工具 schema 和参数，然后与 Codex 请求结构对照。先把 permissions/collaboration 的 developer 角色差异查实。</p><p><strong>P0 · 做状态转换测试。</strong> 验证 sandbox/approval、协作模式、cwd 变化及撤回时，旧 fragment 是否仍可影响后续模型步。</p><p><strong>P0 · 确认事实性上下文。</strong> 检查真实 AGENTS.md 正文、working-directory context 和 environment XML 的最终重复情况。</p><p><strong>P1 · 对齐工具和执行边界。</strong> 核实挂载后的工具列表、并行/独占语义、工具结果回填、失败恢复与继续策略。</p><p><strong>P2 · 再调静态文案。</strong> 确保 personality 与上游 e6de6a2 现状一致；之后再处理静态指令措辞、顺序和不必要的重复。</p><p><strong>本轮结论 · 收窄范围。</strong> preset 只保证 permissions → collab → environment → working-directory 快照这四段的相对顺序；AGENTS.md、skill catalog、time context 由其它插件决定，不再为“完整对齐”搬动。developer role、撤回语义等差异按“单步消息顺序与角色”一节的已知差异表跟踪。</p></div></section>
+<footer class="foot">源码根目录：Codex = <code>ref/codex-main/</code>（浅克隆，e6de6a2）；DSH = <code>/home/hive/projects/dsh-plugin_dev/deepseek-harness/</code>（profile 侧按 0.2.1-rc.2 锁定）；preset = 当前工作区。行号是实现时核对的定位点；标注“可执行检查”的结论由 <code>node check-codex-world-state-order.mjs</code> 断言，其余运行时行为仍需在目标部署验证。页面无外部脚本、字体、样式或网络依赖。</footer>
 </main>
 <script>
 const tabs=[...document.querySelectorAll('[role="tab"]')];

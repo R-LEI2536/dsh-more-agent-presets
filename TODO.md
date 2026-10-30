@@ -164,3 +164,18 @@ or remove them once a decision lands.
     Reconsidered — DSH Has a `context()` API for input[] User-Role),
     `daily/2026-09-16/codex-permissions-plugin-architecture.md`
     (`<collaboration_mode>` Body Fix — Proposed (v1.4.4) section).
+
+- **World-state withdrawal is a separate decision, not part of the ordering work.**
+  - Current behaviour is pinned by `check-codex-world-state-order.mjs` layer 3:
+    on A→B→A the hash short-circuit re-sends the changed block each time and
+    never retracts the old one, so every copy stays in history and the model
+    keeps seeing stale fragments between changes.
+  - Open decision: implement a `replace` (surface replacement of the previous
+    block by `seq`) instead of an append. Needs its own risk assessment —
+    surface/compaction semantics, diff-only rendering, behaviour on user-role
+    messages — and must not be mixed into the ordering fix.
+  - Ordering contract the preset does own (a withdrawal change must not regress
+    it): permissions → collaboration_mode → environment → required
+    working-directory snapshot, then the user message. AGENTS.md, skill catalog
+    and time context are owned by other plugins; see
+    `docs/codex-architecture.html` "单步消息顺序与角色".

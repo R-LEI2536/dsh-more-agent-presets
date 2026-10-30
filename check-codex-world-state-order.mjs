@@ -3,16 +3,25 @@
  *
  *   node check-codex-world-state-order.mjs
  *
- * Two layers, because either one alone proves the wrong thing:
+ * WHAT THIS FILE PROVES (and what it does not):
  *
- * 1. Unit — `insertWorldState()` places a block by rank no matter what order
- *    the blocks arrive in, and the whole run stays ahead of the loop's
- *    runtime-context snapshot and the claimed user input.
- * 2. Integration — the three real plugins composed through cordis waterfall
+ * 1. Unit — `orderPrePromptRun()` / `insertWorldState()` put the preset's three
+ *    world-state blocks and the loop's runtime-context placeholder in Codex
+ *    order no matter what order they arrive in, without moving or dropping any
+ *    message they do not own.
+ * 2. Integration — the three REAL plugins composed through cordis waterfall
  *    semantics (outermost listener first, each appending AFTER `await next()`),
- *    plus a `dsh-agent-instructions` stand-in that splices AGENTS.md after the
- *    claimed messages. Only this layer answers "what does the step's message
- *    list actually look like".
+ *    surrounded by STUBS for the packages that own the neighbouring messages:
+ *    the loop built-in, `dsh-agent-instructions`, `dsh-tool-skill` and
+ *    `dsh-time-context`. Those stubs model each package's append shape as read
+ *    in source; they are not the packages themselves.
+ *
+ * NOT covered here: the real packages' own skip conditions, request admission
+ * (the loop re-appends the freshly rendered runtime-context snapshot at this
+ * position — `packages/core/agent-loop/src/agent.ts:425-440`, review only), and
+ * a live deployment's session log. The session-log baseline of the pre-change
+ * order is the user-provided trajectory capture; this file does not re-derive
+ * it.
  *
  * Baseline this pins down. Measured on the deployed preset before the change
  * (session-f8d1d89c, turn 1 step 1):
@@ -20,19 +29,29 @@
  *   user → runtime-context → codex-environment → codex-collab-mode
  *        → codex-permissions → skill-catalog
  *
- * Target, confirmed against upstream Codex (e6de6a2): world state is recorded
- * BEFORE the prompt (`codex-rs/core/src/session/turn.rs:302` vs `:388`), and
- * the working directory travels in the user-role `<environment_context>`
- * (`codex-rs/core/src/context/world_state/environment.rs:210`), i.e. inside
- * that pre-prompt run. DSH renders it through the required
- * `Current runtime context` snapshot instead, so the snapshot joins the same
- * run:
+ * Target, confirmed against upstream Codex (e6de6a2), turn 1: world state is
+ * recorded BEFORE the prompt (`codex-rs/core/src/session/turn.rs:302` vs
+ * `:388`). Its `<environment_context>` is a user-role fragment and carries the
+ * working directory (`codex-rs/core/src/context/world_state/environment.rs:210`),
+ * and AGENTS.md is user-role too, merged before it
+ * (`.../agents_md.rs:40-42`, `.../context_manager/updates.rs:21-49`). DSH renders
+ * the cwd through the required `Current runtime context` snapshot instead, so
+ * that snapshot joins the same run:
  *
  *   codex-permissions → codex-collab-mode → codex-environment
  *     → runtime-context → user
  *
- * `dsh-agent-instructions` (AGENTS.md) and the skill catalog are appended by
- * outer listeners and stay after the prompt: the preset cannot move them.
+ * This mirrors Codex's TURN-START recording point only. Codex records a
+ * mid-step world-state diff AFTER the pending input (`turn.rs:487` then `:555`);
+ * the preset always places its run before the claimed messages.
+ *
+ * AGENTS.md (`dsh-agent-instructions`) currently lands after the claimed batch,
+ * i.e. after the prompt; Codex puts it before the prompt. Whether listener
+ * ordering could hoist it is NOT verified, so this file does not assert it is
+ * immovable. The skill catalog has its own digest/resend semantics, and roles
+ * differ (DSH user-role blocks vs Codex developer-role permissions/collaboration
+ * mode). Withdrawal (A→B→A leaving stale fragments) is pinned as today's
+ * behaviour only; implementing a `replace` is a separate decision.
  *
  * Not in `files`, so it never ships.
  */
@@ -88,7 +107,7 @@ for (const arrival of permutations) {
   assert.deepEqual(kinds(list), [...WORLD_STATE_ORDER], `arrival ${arrival.join(' > ')}`)
 }
 
-// The run stays ahead of the required runtime-context snapshot, which stays
+// The run stays ahead of the required runtime-context placeholder, which stays
 // ahead of the claimed user input.
 let ahead = [message('user', 'hello'), message('runtime-context')]
 ahead = insertWorldState(ahead, message('codex-environment'))
@@ -110,6 +129,21 @@ assert.deepEqual(
   ['codex-permissions', 'codex-environment', 'runtime-context', 'user'],
 )
 
+// Messages the helper does not own (AGENTS.md, skill catalog, time context) are
+// never moved relative to each other, and the placeholder keeps its identity so
+// admission can substitute the fresh snapshot in place.
+const foreign = [
+  message('agent-instructions', '<AGENTS.md>'),
+  message('skill-catalog', '<system-reminder>'),
+  message('time-context', '<current_time>'),
+]
+const runtimeContext = message('runtime-context', 'Current runtime context.')
+const mixed = orderPrePromptRun([message('user', 'hello'), ...foreign, runtimeContext])
+assert.deepEqual(kinds(mixed), [
+  'runtime-context', 'user', ...foreign.map(entry => entry.source.kind),
+])
+assert.equal(mixed[0], runtimeContext, 'the placeholder object is preserved')
+
 // An empty list works, and a partial run stays ordered.
 assert.deepEqual(kinds(insertWorldState([], message('codex-collab-mode'))), ['codex-collab-mode'])
 let partial = [message('codex-permissions')]
@@ -124,18 +158,15 @@ assert.throws(() => insertWorldState([], message('codex-unknown')), /not a Codex
 /**
  * Compose `agent/pre-step` listeners the way cordis does: outermost first, each
  * receiving a `next` that invokes the next listener, and the built-in behaviour
- * last. The production loop's built-in appends the runtime-context snapshot
- * after the claimed messages (`packages/core/agent-loop/src/agent.ts:276-283`).
+ * last. The production loop's built-in appends the runtime-context placeholder
+ * after the claimed messages (`packages/core/agent-loop/src/agent.ts:274-283`).
  */
-function compose({ plugins, claimed, sessionId, runtimeContext, agentsInstructions }) {
+function compose({ plugins, claimed, sessionId, runtimeContext, outer = [] }) {
   const builtin = () => Promise.resolve({
     kind: 'enter',
     messages: runtimeContext === undefined ? [...claimed] : [...claimed, runtimeContext],
   })
-  const listeners = [
-    ...agentsInstructions === undefined ? [] : [agentsInstructions],
-    ...plugins.map(plugin => plugin.listener),
-  ]
+  const listeners = [...outer, ...plugins.map(plugin => plugin.listener)]
   const dispatch = index => async () => {
     const listener = listeners[index]
     if (listener === undefined) return builtin()
@@ -160,11 +191,14 @@ function mount(plugin, listener) {
     on: (event, handler) => { if (event === 'agent/pre-step') listener(handler) },
     get: () => undefined,
     systemPrompt: { suppressRuntimeContext() {} },
-    sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+    sandboxPolicy: { resolve: () => ({ mode: sandboxMode }) },
     approval: { overrideOf: () => undefined, config: { policy: 'ask' } },
   }
   plugin.apply(ctx)
 }
+
+// The stub sandbox mode is mutable so layer 3 can walk A→B→A.
+let sandboxMode = 'workspace-write'
 
 const registered = []
 for (const plugin of [permissions, collab, environment]) {
@@ -173,9 +207,11 @@ for (const plugin of [permissions, collab, environment]) {
 assert.deepEqual(registered.map(entry => entry.name), [...WORLD_STATE_ORDER],
   'a plugin name is the source.kind the helper ranks')
 
-// `dsh-agent-instructions` inserts its context right after the claimed batch
-// (`packages/context/agent-instructions/src/index.ts:355-358`).
-const agentsInstructions = async ({ messages }, next) => {
+// Outer packages, modelled by their append shape only (register order, skip
+// conditions and bodies are the packages' own business):
+// - `dsh-agent-instructions` splices AGENTS.md right after the claimed batch
+//   (`packages/context/agent-instructions/src/index.ts:355-358`).
+const agentInstructions = async ({ messages }, next) => {
   const decision = await next()
   const lastClaimed = decision.messages.findLastIndex(entry => messages.includes(entry))
   return {
@@ -183,18 +219,32 @@ const agentsInstructions = async ({ messages }, next) => {
     messages: decision.messages.toSpliced(lastClaimed + 1, 0, message('agent-instructions', '<AGENTS.md>')),
   }
 }
+// - `dsh-tool-skill` appends the initial catalog after every downstream listener
+//   (`packages/skill/tool-skill/src/index.ts:215-252`).
+const skillCatalog = async (_payload, next) => {
+  const decision = await next()
+  if (decision.kind === 'reject') return decision
+  return { ...decision, messages: [...decision.messages, message('skill-catalog', '<system-reminder>')] }
+}
+// - `dsh-time-context` is a PREPENDED listener (global, so outermost) that
+//   appends its snapshot last (`packages/context/time-context/src/index.ts:185-224`).
+const timeContext = async (_payload, next) => {
+  const decision = await next()
+  if (decision.kind === 'reject') return decision
+  return { ...decision, messages: [...decision.messages, message('time-context', '<current_time>')] }
+}
 
 // First step: the blocks arrive in reverse and must come out in canonical order,
-// the runtime-context snapshot next, then the direct prompt. AGENTS.md follows
-// the prompt because `dsh-agent-instructions` is an outer listener that splices
-// at `lastClaimedIndex + 1` — Codex would put it in the pre-prompt developer
-// aggregate, but the preset cannot reorder another package's listener.
+// the runtime-context placeholder next, then the direct prompt. The outer
+// messages keep their own positions after the prompt — the preset neither moves
+// nor drops them.
+const runtimeContextMessage = message('runtime-context', 'Current runtime context.')
 const first = await compose({
   plugins: registered,
   claimed: [message('user', 'Run bash: echo hi')],
   sessionId: 'check-first',
-  runtimeContext: message('runtime-context', 'Current runtime context.'),
-  agentsInstructions,
+  runtimeContext: runtimeContextMessage,
+  outer: [timeContext, skillCatalog, agentInstructions],
 })
 assert.deepEqual(kinds(first.messages), [
   'codex-permissions',
@@ -203,7 +253,14 @@ assert.deepEqual(kinds(first.messages), [
   'runtime-context',
   'user',
   'agent-instructions',
+  'skill-catalog',
+  'time-context',
 ])
+assert.equal(first.messages[3], runtimeContextMessage,
+  'the placeholder is the loop-owned message, untouched by the plugins')
+for (const kind of new Set(kinds(first.messages))) {
+  assert.equal(kinds(first.messages).filter(entry => entry === kind).length, 1, `${kind} appears once`)
+}
 
 // Every block keeps its role, its source shape, and its body.
 for (const entry of first.messages.slice(0, 3)) {
@@ -214,7 +271,8 @@ for (const entry of first.messages.slice(0, 3)) {
 }
 
 // A later step with no fresh user input still gets all three blocks, in order,
-// ahead of the runtime-context snapshot alone.
+// ahead of the runtime-context snapshot alone. The outer packages can skip their
+// own append on such steps, so they are not composed here.
 const continuation = await compose({
   plugins: registered,
   claimed: [],
@@ -225,7 +283,7 @@ assert.deepEqual(kinds(continuation.messages), [...WORLD_STATE_ORDER, 'runtime-c
 
 // A later turn whose world state did not change injects no block (the
 // per-session hash short-circuits), but the ordering still has to keep the
-// runtime-context snapshot ahead of the prompt.
+// runtime-context placeholder ahead of the prompt.
 const steady = await compose({
   plugins: registered,
   claimed: [message('user', 'second prompt')],
@@ -233,5 +291,48 @@ const steady = await compose({
   runtimeContext: message('runtime-context', 'Current runtime context.'),
 })
 assert.deepEqual(kinds(steady.messages), ['runtime-context', 'user'])
+
+// ---- layer 3: pinned today's behaviour, not a promise --------------------
+//
+// World-state withdrawal. The per-session hash short-circuit re-sends a changed
+// block and never retracts the old one: on A→B→A the step lists show the block
+// three times, and every copy stays in history, so the model keeps seeing the
+// stale fragments between changes. Implementing a `replace` (surface replacement
+// of the previous block) is a SEPARATE decision with its own risk assessment;
+// this block only pins today's append-only behaviour so a future change is a
+// deliberate test change.
+const withdrawalSessionId = 'check-withdrawal'
+sandboxMode = 'workspace-write'
+const stateA = await compose({
+  plugins: registered,
+  claimed: [message('user', 'A')],
+  sessionId: withdrawalSessionId,
+  runtimeContext: message('runtime-context', 'Current runtime context.'),
+})
+sandboxMode = 'read-only'
+const stateB = await compose({
+  plugins: registered,
+  claimed: [message('user', 'B')],
+  sessionId: withdrawalSessionId,
+  runtimeContext: message('runtime-context', 'Current runtime context.'),
+})
+sandboxMode = 'workspace-write'
+const stateA2 = await compose({
+  plugins: registered,
+  claimed: [message('user', 'A again')],
+  sessionId: withdrawalSessionId,
+  runtimeContext: message('runtime-context', 'Current runtime context.'),
+})
+sandboxMode = 'workspace-write'
+assert.deepEqual(kinds(stateA.messages), [
+  'codex-permissions', 'codex-collab-mode', 'codex-environment', 'runtime-context', 'user',
+])
+// Only the changed block re-sends; the unchanged ones stay out.
+assert.deepEqual(kinds(stateB.messages), ['codex-permissions', 'runtime-context', 'user'])
+assert.deepEqual(kinds(stateA2.messages), ['codex-permissions', 'runtime-context', 'user'])
+assert.equal(
+  stateA2.messages[0].content[0].text.includes('Read only'), false,
+  'the re-sent A block carries A again, not B: nothing is replaced or corrected',
+)
 
 console.log('check-codex-world-state-order: ok')

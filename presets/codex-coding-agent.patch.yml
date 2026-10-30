@@ -364,9 +364,14 @@
           #   * codex-environment.mjs → `<environment_context>...</environment_context>`
           #                              (user-role upstream and here)
           #
-          # Registration order determines the order these blocks appear in `input[]`.
-          # Mirroring upstream `world_state.rs` ordering, sandbox/approval comes before
-          # collaboration_mode, and collaboration_mode comes before environment_context.
+          # Registration order is NOT the resulting order: `agent/pre-step` is a
+          # waterfall each plugin appends to after `next()`, so the first
+          # registered listener writes last. world-state-order.mjs re-sorts the
+          # run to upstream's Permissions → CollaborationMode → Environments and
+          # places the loop's required `runtime-context` snapshot after it, so the
+          # model sees all four before the step's user message. AGENTS.md and the
+          # skill catalog are injected by other packages and currently land after
+          # it; whether listener ordering could hoist AGENTS.md is unverified.
 
           - id: codex-permissions
             name: 'dsh-more-agent-presets/presets/codex-coding-agent/codex-permissions.mjs'
