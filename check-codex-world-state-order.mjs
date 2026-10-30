@@ -6,7 +6,8 @@
  * Two layers, because either one alone proves the wrong thing:
  *
  * 1. Unit — `insertWorldState()` places a block by rank no matter what order
- *    the blocks arrive in.
+ *    the blocks arrive in, and the whole run stays ahead of the loop's
+ *    runtime-context snapshot and the claimed user input.
  * 2. Integration — the three real plugins composed through cordis waterfall
  *    semantics (outermost listener first, each appending AFTER `await next()`),
  *    plus a `dsh-agent-instructions` stand-in that splices AGENTS.md after the
@@ -19,18 +20,28 @@
  *   user → runtime-context → codex-environment → codex-collab-mode
  *        → codex-permissions → skill-catalog
  *
- * The contract asserted below is the target — still to be confirmed by a real
- * session; this file only pins the composition the plugins produce:
+ * Target, confirmed against upstream Codex (e6de6a2): world state is recorded
+ * BEFORE the prompt (`codex-rs/core/src/session/turn.rs:302` vs `:388`), and
+ * the working directory travels in the user-role `<environment_context>`
+ * (`codex-rs/core/src/context/world_state/environment.rs:210`), i.e. inside
+ * that pre-prompt run. DSH renders it through the required
+ * `Current runtime context` snapshot instead, so the snapshot joins the same
+ * run:
  *
  *   codex-permissions → codex-collab-mode → codex-environment
- *     → user → runtime-context → AGENTS.md
+ *     → runtime-context → user
+ *
+ * `dsh-agent-instructions` (AGENTS.md) and the skill catalog are appended by
+ * outer listeners and stay after the prompt: the preset cannot move them.
  *
  * Not in `files`, so it never ships.
  */
 
 import assert from 'node:assert/strict'
 import { registerHooks } from 'node:module'
-import { insertWorldState, WORLD_STATE_ORDER } from './presets/codex-coding-agent/world-state-order.mjs'
+import {
+  insertWorldState, orderPrePromptRun, WORLD_STATE_ORDER,
+} from './presets/codex-coding-agent/world-state-order.mjs'
 
 // The plugins import the host LLM package for its message factories. This repo
 // has no node_modules (it ships as a bundle, not a library), so resolve that one
@@ -77,11 +88,27 @@ for (const arrival of permutations) {
   assert.deepEqual(kinds(list), [...WORLD_STATE_ORDER], `arrival ${arrival.join(' > ')}`)
 }
 
-// A run stays ahead of everything that is not a world-state block.
+// The run stays ahead of the required runtime-context snapshot, which stays
+// ahead of the claimed user input.
 let ahead = [message('user', 'hello'), message('runtime-context')]
 ahead = insertWorldState(ahead, message('codex-environment'))
 ahead = insertWorldState(ahead, message('codex-permissions'))
-assert.deepEqual(kinds(ahead), ['codex-permissions', 'codex-environment', 'user', 'runtime-context'])
+assert.deepEqual(kinds(ahead), [
+  'codex-permissions', 'codex-environment', 'runtime-context', 'user',
+])
+
+// The no-injection path (world state unchanged) still normalizes the order.
+assert.deepEqual(
+  kinds(orderPrePromptRun([message('user', 'hello'), message('runtime-context')])),
+  ['runtime-context', 'user'],
+)
+assert.deepEqual(
+  kinds(orderPrePromptRun([
+    message('codex-environment'), message('runtime-context'),
+    message('codex-permissions'), message('user', 'hello'),
+  ])),
+  ['codex-permissions', 'codex-environment', 'runtime-context', 'user'],
+)
 
 // An empty list works, and a partial run stays ordered.
 assert.deepEqual(kinds(insertWorldState([], message('codex-collab-mode'))), ['codex-collab-mode'])
@@ -158,14 +185,10 @@ const agentsInstructions = async ({ messages }, next) => {
 }
 
 // First step: the blocks arrive in reverse and must come out in canonical order,
-// ahead of the direct prompt.
-//
-// AGENTS.md lands before the runtime-context snapshot, not after it: the loop's
-// built-in appends the snapshot AFTER the claimed batch, while
-// `dsh-agent-instructions` is the outer listener and splices at
-// `lastClaimedIndex + 1`, i.e. still inside the claimed batch's tail. That is
-// derived from the composition below, not yet observed in a real session — the
-// repository used for the baseline capture had no AGENTS.md.
+// the runtime-context snapshot next, then the direct prompt. AGENTS.md follows
+// the prompt because `dsh-agent-instructions` is an outer listener that splices
+// at `lastClaimedIndex + 1` — Codex would put it in the pre-prompt developer
+// aggregate, but the preset cannot reorder another package's listener.
 const first = await compose({
   plugins: registered,
   claimed: [message('user', 'Run bash: echo hi')],
@@ -177,9 +200,9 @@ assert.deepEqual(kinds(first.messages), [
   'codex-permissions',
   'codex-collab-mode',
   'codex-environment',
+  'runtime-context',
   'user',
   'agent-instructions',
-  'runtime-context',
 ])
 
 // Every block keeps its role, its source shape, and its body.
@@ -199,5 +222,16 @@ const continuation = await compose({
   runtimeContext: message('runtime-context', 'Current runtime context.'),
 })
 assert.deepEqual(kinds(continuation.messages), [...WORLD_STATE_ORDER, 'runtime-context'])
+
+// A later turn whose world state did not change injects no block (the
+// per-session hash short-circuits), but the ordering still has to keep the
+// runtime-context snapshot ahead of the prompt.
+const steady = await compose({
+  plugins: registered,
+  claimed: [message('user', 'second prompt')],
+  sessionId: 'check-first',
+  runtimeContext: message('runtime-context', 'Current runtime context.'),
+})
+assert.deepEqual(kinds(steady.messages), ['runtime-context', 'user'])
 
 console.log('check-codex-world-state-order: ok')

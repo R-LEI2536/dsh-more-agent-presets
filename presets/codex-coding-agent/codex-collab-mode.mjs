@@ -53,7 +53,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { insertWorldState } from './world-state-order.mjs'
+import { insertWorldState, orderPrePromptRun } from './world-state-order.mjs'
 
 export const name = 'codex-collab-mode'
 
@@ -93,7 +93,9 @@ export function apply(ctx) {
     const decision = await next()
     if (decision.kind === 'reject') return decision
 
-    if (lastHashBySession.get(agent.session.id) === bodyHash) return decision
+    if (lastHashBySession.get(agent.session.id) === bodyHash) {
+      return { ...decision, messages: orderPrePromptRun(decision.messages) }
+    }
     lastHashBySession.set(agent.session.id, bodyHash)
 
     const message = createUserMessage({

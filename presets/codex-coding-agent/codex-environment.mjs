@@ -44,7 +44,7 @@
  */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { insertWorldState } from './world-state-order.mjs'
+import { insertWorldState, orderPrePromptRun } from './world-state-order.mjs'
 
 export const name = 'codex-environment'
 
@@ -77,7 +77,9 @@ export function apply(ctx) {
       ?? agent.session.header.cwd
       ?? process.cwd()
     const current = stateHash(sessionCwd)
-    if (lastHashBySession.get(sessionId) === current) return decision
+    if (lastHashBySession.get(sessionId) === current) {
+      return { ...decision, messages: orderPrePromptRun(decision.messages) }
+    }
     lastHashBySession.set(sessionId, current)
 
     const shell = process.platform === 'win32' ? 'pwsh' : 'bash'

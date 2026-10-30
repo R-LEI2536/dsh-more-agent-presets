@@ -31,7 +31,7 @@
  */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { insertWorldState } from './world-state-order.mjs'
+import { insertWorldState, orderPrePromptRun } from './world-state-order.mjs'
 
 export const name = 'codex-permissions'
 
@@ -64,7 +64,9 @@ export function apply(ctx) {
     const current = createHash('sha256')
       .update(`${sandbox.mode}|${policy}|${overridePolicy ?? ''}`)
       .digest('hex')
-    if (lastHashBySession.get(session.id) === current) return decision
+    if (lastHashBySession.get(session.id) === current) {
+      return { ...decision, messages: orderPrePromptRun(decision.messages) }
+    }
     lastHashBySession.set(session.id, current)
 
     const approvalText = policy === 'never' ? NEVER_SENTENCE : ASK_SENTENCE
