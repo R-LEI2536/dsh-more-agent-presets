@@ -134,8 +134,14 @@ const patches = manifest.dsh?.bundle?.patch
 assert.ok(Array.isArray(patches) && patches.length > 0, 'package.json must declare dsh.bundle.patch')
 
 // The bundle's own compatibility gate reads `engines.dsh` first and ignores the
-// DSH peers once it exists; both must name a range that admits 0.2.1-rc.2.
-assert.equal(manifest.engines?.dsh, '^0.2.1-rc.1', 'engines.dsh must state the 0.2.1 floor')
+// DSH peers once it exists. Pin the EXACT runtime: `^0.2.1-rc.1` admits every
+// later 0.2.1-rc.*, so pnpm installed rc.4 host packages into the profile, where
+// they shadowed the rc.2 runtime and the version gate disabled every preset row.
+assert.equal(manifest.engines?.dsh, '0.2.1-rc.2', 'engines.dsh must pin the runtime it targets')
+for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
+  if (!name.startsWith('@deepseek-ai/dsh-')) continue
+  assert.equal(range, '0.2.1-rc.2', `${name} must pin 0.2.1-rc.2, got ${range}`)
+}
 assert.ok(
   !JSON.stringify(manifest).includes('0.2.0-rc'),
   'no manifest range may stay on the 0.2.0-rc line',

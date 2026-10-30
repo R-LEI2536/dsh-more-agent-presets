@@ -31,6 +31,7 @@
  */
 import { createHash } from 'node:crypto'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { insertWorldState } from './world-state-order.mjs'
 
 export const name = 'codex-permissions'
 
@@ -74,7 +75,7 @@ export function apply(ctx) {
       // V4 sources are producer-owned; the retired plugin-kind wrapper is refused at encode time.
       source: { kind: name, form: 'snapshot', sections: [{ name, text }] },
     })
-    return { ...decision, messages: [...decision.messages, message] }
+    return { ...decision, messages: insertWorldState(decision.messages, message) }
   })
 
   ctx.on('agent/disposed', ({ agent }) => {
