@@ -52,6 +52,12 @@ assert.match(
   /^You are Codex, a coding agent based on GPT-6/,
 )
 
+// A dotted point-release (`gpt-6.1-sol`) is NOT a prefix of `gpt-6-sol` (`gpt-6.` vs `gpt-6-`), so it
+// is listed as its own alias on the GPT-6 row; without that row it used to fall to `default`.
+assert.match(pickPersona('gpt-6.1-sol', table), /^You are Codex, a coding agent based on GPT-6/)
+assert.match(pickPersona('daseinai-gpt.gpt-6.1-sol', table), /^You are Codex, a coding agent based on GPT-6/)
+assert.notEqual(pickPersona('gpt-6.1-sol', table), table.default)
+
 // An unrelated model, and an assembly with no model at all, fall to `default`.
 assert.equal(sessionModel(ctxWith(undefined), agentWith('deepseek-v4.1-flash')), 'deepseek-v4.1-flash')
 assert.equal(pickPersona(sessionModel(ctxWith(undefined), agentWith('deepseek-v4.1-flash')), table), table.default)

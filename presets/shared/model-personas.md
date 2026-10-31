@@ -52,5 +52,8 @@ Markdown 规则）分别作用在各自的捕获上。两者之间没有「公�
 - 先精确命中 key；否则取**最长**的一条「候选模型 id 以其为前缀」的 key —— 所以
   `qwen3-coder` 命中 `qwen`、`deepseek-r1-0528` 命中 `deepseek-r1`。
   要压过宽 key，就写更具体的 key（最长优先）。
+- **版本号带点的新模型必须显式写进同一行的 `model` 数组，前缀匹配救不了它。** `gpt-6.1-sol`
+  并不以 `gpt-6-sol` 为前缀（`gpt-6.` 对 `gpt-6-`），不加就会落 `default`：这就是
+  `gpt-6.1-sol` 曾显示通用提示词的原因，现在它和 `gpt-6-sol` / `gpt-5.6-sol` 同组共用 GPT-6 文案。
 - 都没命中 → 落 `default`（通用）。
 - 不要写 `deepseek` 这种宽 key：它会把默认的 `deepseek-v4.1-flash` 一起吞掉。
