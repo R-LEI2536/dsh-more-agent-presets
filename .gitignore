@@ -58,3 +58,7 @@ PUBLISH-CHECKLIST.md
 # Local sandbox caches / scratch tools from upstream exploration
 .cargo-home/
 gen-codex-prompt.mjs
+
+# Local DSH dev artifacts (project-local skills, repro scripts); not published
+.dsh/
+.scratch/
