@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.4] - 2026-11-01
+
+### Changed (`the bundle now targets DSH 0.2.1-rc.5`)
+
+- **`engines.dsh` is a range again — `^0.2.1-rc.1` — because rc.5 rejects an exact pin.** The 0.2.1 compatibility gate is byte-identical in rc.5 (`packages/boot/app-boot/src/plugin-compatibility.ts`), but its verdict on an exact pin flips: `semver.satisfies('0.2.1-rc.5', '0.2.1-rc.2', { includePrerelease: true })` is false, and because this package carries `dsh.bundle` the failure is not one disabled row — the whole bundle is skipped, so none of the eight presets would appear. `^0.2.1-rc.1` admits rc.1 … rc.5 and rejects `0.3.0-0`; a bare `^0.2.1` still rejects every prerelease runtime (measured against the runtime's own semver 7.8.5), so the caret-with-prerelease form is required.
+- **The 23 `dependencies` and both DSH `peerDependencies` moved from exact `0.2.1-rc.2` to exact `0.2.1-rc.5`.** They had been pinned to rc.2 in 1.8.3 because a RANGE there let pnpm resolve rc.4 host copies into the profile while an rc.2 host ran, and the profile copy shadowed the host's. Exact versions stay the rule; only the line moves, so a profile install cannot mix a drifted host copy into the rc.5 runtime. `@deepseek-ai/cordis` `~4.0.5` and `@deepseek-ai/cordis-plugin-loader` `~1.0.6` are unchanged — the vendor set is identical across the corridor.
+- **No patch, preset module or prompt changed, because the corridor did not touch this surface.** All 24 `@deepseek-ai/dsh-*` names the eight patches carry — the 23 live row names plus the commented-out `tool-cordis` row — resolve in rc.5 at `0.2.1-rc.5`, and every one of them changed only its `package.json` version between rc.2 and rc.5. The 108 row config keys verified for 1.8.0 therefore still hold; no `tool-subagent` key and no prompt variable changed. None of rc.5's client-side changes (analytics `send_button_click`, `TooltipSide`, `ui-entry-customization`, reasoning `rawText`, draft reuse) or the `/models` listing reaches a declarative preset bundle.
+- **Checks.** `check-dsh-021-contract.mjs` now pins `engines.dsh === '^0.2.1-rc.1'` (and that it is not an exact version), every `@deepseek-ai/dsh-*` dependency and peer at `0.2.1-rc.5`, and still refuses any `0.2.0-rc` range. All eight `check-*.mjs` gates are green against the upgraded manifest.
+- **Deployment note:** upgrade the host OUTSIDE a running dsh session (`npm install -g @deepseek-ai/dsh@0.2.1-rc.5` from an external terminal), then restart the profile; a browser refresh does not swap the running package tree.
+
 ## [1.8.3] - 2026-10-27
 
 ### Changed (`chat-subagent`'s prompt states the tool boundary and the lister's two-step shape)
