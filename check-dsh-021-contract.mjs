@@ -134,13 +134,28 @@ const patches = manifest.dsh?.bundle?.patch
 assert.ok(Array.isArray(patches) && patches.length > 0, 'package.json must declare dsh.bundle.patch')
 
 // The bundle's own compatibility gate reads `engines.dsh` first and ignores the
-// DSH peers once it exists. Pin the EXACT runtime: `^0.2.1-rc.1` admits every
-// later 0.2.1-rc.*, so pnpm installed rc.4 host packages into the profile, where
-// they shadowed the rc.2 runtime and the version gate disabled every preset row.
-assert.equal(manifest.engines?.dsh, '0.2.1-rc.2', 'engines.dsh must pin the runtime it targets')
-for (const [name, range] of Object.entries(manifest.dependencies ?? {})) {
-  if (!name.startsWith('@deepseek-ai/dsh-')) continue
-  assert.equal(range, '0.2.1-rc.2', `${name} must pin 0.2.1-rc.2, got ${range}`)
+// DSH peers once it exists. An EXACT pin is fatal on a later runtime: the gate
+// tests `semver.satisfies(runtime, range, { includePrerelease: true })`, so
+// `0.2.1-rc.2` does not admit `0.2.1-rc.5` — and a bundle (`dsh.bundle`) is
+// skipped WHOLE, so every preset would disappear instead of one disabled row.
+// The gate range is therefore `^0.2.1-rc.1`: it admits rc.1 … rc.5 and rejects
+// 0.3.0-0, while a bare `^0.2.1` would reject every prerelease runtime.
+assert.equal(
+  manifest.engines?.dsh,
+  '^0.2.1-rc.1',
+  'engines.dsh must admit the 0.2.1-rc.* line, not pin one runtime',
+)
+assert.doesNotMatch(manifest.engines?.dsh ?? '', /^\d/, 'engines.dsh must not be an exact version')
+// The versions the bundle SHIPS stay EXACT `0.2.1-rc.5` — the runtime this
+// release targets. A range here let pnpm resolve rc.4 copies into a profile
+// while an rc.2 host was running, and the profile copy shadowed the host's
+// (1.8.3); exact versions keep one install on one runtime. Nothing in the
+// manifest may stay on the 0.2.0-rc line.
+for (const field of ['dependencies', 'peerDependencies']) {
+  for (const [name, range] of Object.entries(manifest[field] ?? {})) {
+    if (!name.startsWith('@deepseek-ai/dsh-')) continue
+    assert.equal(range, '0.2.1-rc.5', `${name} (${field}) must pin 0.2.1-rc.5, got ${range}`)
+  }
 }
 assert.ok(
   !JSON.stringify(manifest).includes('0.2.0-rc'),
