@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.8.5] - 2026-11-04
+
+### Changed (`chat-subagent` delegator judges the child's evidence)
+
+- **The delegation note now defines a contract, not a hand-off.** `presets/chat-subagent/delegation-note.md` gains a `## Delegation contract` section: the child is an evidence collector, the top-level session owns the judgment and the final answer. It forbids forwarding the user's request verbatim and forbids presenting the child's conclusion as its own answer, asks for a task prompt that names the purpose, the evidence to collect, where to look, and the report shape (paths, line numbers, exact snippets, explicit unknowns), and requires the delegator to separate observation from inference and to start a narrower probe when a gap or a contradiction changes the answer. "Do not call `subagent` again for the same task" became "do not replay an identical task": without that relaxation the top-level model cannot verify a report, which is the behaviour this release is fixing. The note also states the child is read-only — `delegator.mjs`'s comment and the READMEs already claimed the note said so, but the file did not.
+- **The child persona now returns a judgeable report instead of a verdict.** The `subagent-persona` row in `presets/chat-subagent.patch.yml` asks for the task it was given, the paths/line numbers/snippets it inspected, observations kept separate from inferences, what it could not determine plus conflicting evidence, and optional interpretations labelled as hypotheses; it must not answer for the user or decide for the delegator. The YAML block changed from folded `>-` to literal `|-` so the report list keeps its line breaks.
+- **Declaration and docs follow the contract.** The preset `description`, both READMEs' `chat-subagent` sections, and `CONTEXT.md` (new **Delegation contract** term) describe the split; `presets/chat-subagent/delegator.mjs`'s comment names the contract among the things only the note can state.
+- **Checks.** `check-delegator.mjs` keeps the note-equals-file pin and adds anchors for both halves of the contract (`## Delegation contract`, evidence collector, no verbatim forwarding, observation/inference split, read-only; child persona's evidence collector, hypotheses, literal block), because prompt text has no other failure mode — it can be edited away silently. All eight `check-*.mjs` gates are green.
+- **No mechanism changed.** The standing guard, the depth-0 catalog mask, the route insurance, the tool rows and the mount order are untouched: this release changes prompt text, a description and docs only, so the 1.7.3–1.7.6 `tools/change` collision paths cannot be re-entered. How much the contract changes behaviour still depends on the model; a live session re-measurement is the natural follow-up, not a precondition for the text change.
+
 ## [1.8.4] - 2026-11-01
 
 ### Changed (`the bundle now targets DSH 0.2.1-rc.5`)
