@@ -223,11 +223,12 @@ export function namedRoute(args) {
  * subagent tool is its only capability that STARTS work, so the note has to say
  * all of this: nothing else tells the model that the child is blind to the
  * conversation, nothing else tells it that the child is read-only, nothing else
- * tells it that the Team tools a deployment may list are all refused, and
- * nothing else tells it that the child's report arrives by itself. The capabilities
- * it names are the SHIPPED default; a declaration that widens `subagentTools`
- * must revise this file with it, or override the note from the row's
- * `delegationNote`.
+ * tells it that the Team tools a deployment may list are all refused, nothing
+ * else tells it that the child's report arrives by itself, and nothing else
+ * states the delegation contract: the child collects evidence, the delegator
+ * judges it and owns the answer. The capabilities it names are the SHIPPED
+ * default; a declaration that widens `subagentTools` must revise this file with
+ * it, or override the note from the row's `delegationNote`.
  */
 export const DELEGATION_NOTE = readFileSync(new URL('./delegation-note.md', import.meta.url), 'utf8').trim()
 

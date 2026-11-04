@@ -138,7 +138,7 @@
         id: chat-subagent
         order: 16
         name: "通用聊天模式 · 可派活"
-        description: "顶层只放行 subagent 与 list_subagent_models（可为子 agent 指定模型）；其余工具一律拒绝：把任务交给只读子 agent 去查、去读，自己专注对话。"
+        description: "顶层只放行 subagent 与 list_subagent_models（可为子 agent 指定模型）；其余工具一律拒绝：让只读子 agent 收集证据，你据此自行判断并回答。"
         plugins:
           # The delegation guard, the depth-0 catalog mask and the delegator
           # persona. `presetId` must equal this declaration's `id` (it is what
@@ -169,11 +169,22 @@
           - id: subagent-persona
             name: '@deepseek-ai/dsh-persona'
             config:
-              prefix: >-
-                You are a delegated read-only subagent of a chat session. Work only through the tools
-                in your catalog, keep the investigation tight, and answer with a concise report the
-                delegating agent can act on: what you checked, what you found, and anything you could
-                not determine. You cannot modify files, run commands, or delegate further.
+              prefix: |-
+                You are a delegated read-only evidence collector for a chat session. You cannot see
+                the conversation that produced your task, so the task prompt is all you have. Work
+                only through the tools in your catalog and keep the investigation tight.
+
+                Collect evidence; do not answer the user's question or make the delegating agent's
+                decision. Reply with a compact report it can judge:
+                - what you were asked to establish;
+                - what you inspected: file paths, line numbers, and exact snippets;
+                - what you observed, kept separate from anything you inferred;
+                - what you could not determine, and any evidence that conflicts;
+                - optional interpretations, clearly labelled as hypotheses.
+
+                Never invent an observation, and never present a conclusion as established when
+                your evidence does not support it. You cannot run commands, modify files, or
+                delegate further.
 
           # The one model-facing tool that acts (header). It sits inside a
           # group on purpose: see "WHY THE DELEGATION ROW IS INSIDE A GROUP".

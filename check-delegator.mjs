@@ -253,10 +253,19 @@ assert.ok(personaText('gpt-6-luna', personaTable()).startsWith(codex))
 // The delegation half is a FILE, and that file is the source of truth: the
 // constant is only its trimmed content, so prompt text stays a document a human
 // reviews instead of a string array inside the plugin.
-assert.equal(
-  DELEGATION_NOTE,
-  readFileSync(new URL('./presets/chat-subagent/delegation-note.md', import.meta.url), 'utf8').trim(),
-)
+const DELEGATION_HALF = readFileSync(
+  new URL('./presets/chat-subagent/delegation-note.md', import.meta.url), 'utf8',
+).trim()
+assert.equal(DELEGATION_NOTE, DELEGATION_HALF)
+// The contract half is prompt text, so nothing fails loudly when it is edited
+// away. Pin the anchors that keep the child an evidence collector and the
+// delegator the judge: a note that only describes the tools is what let a model
+// forward the user's request and relay the child's verdict as its own answer.
+assert.match(DELEGATION_NOTE, /^## Delegation contract$/m)
+assert.match(DELEGATION_NOTE, /evidence collector, not your answer-giver/)
+assert.match(DELEGATION_NOTE, /Never forward the user's request verbatim/)
+assert.match(DELEGATION_NOTE, /separate observation from inference/)
+assert.match(DELEGATION_NOTE, /The child is read-only/)
 // A row may override it, and the override REPLACES the file rather than joining
 // it. A blank one must not silently drop the delegation half.
 assert.deepEqual(
@@ -780,6 +789,12 @@ assert.equal(
   patch.match(/^[ \t]+- id: subagent-persona\n[ \t]+name: '@deepseek-ai\/dsh-persona'\n/gm)?.length,
   1,
 )
+// The child's persona is the other half of the contract: it must ask for an
+// evidence report the delegator can judge, not a verdict. The literal block is
+// load-bearing too — a folded `>-` would flatten the report list into one line.
+assert.match(patch, /prefix: \|-/)
+assert.match(patch, /You are a delegated read-only evidence collector/)
+assert.match(patch, /clearly labelled as hypotheses/)
 assert.doesNotMatch(patch, /^\s+agentPreset:/m, 'a delegated child must keep joining this preset')
 // The opt-in is what gives the root session a model to name and a lister to read
 // it from; without it the guard's allow-list is right but the capability is gone.
