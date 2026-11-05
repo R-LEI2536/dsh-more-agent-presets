@@ -2,15 +2,15 @@
  * chat-subagent — the delegation guard and the delegator persona.
  *
  * The preset's invariant: a TOP-LEVEL session's CATALOG holds only the two
- * own-layer delegation names — `subagent`, the one tool that STARTS work, and
- * the read-only `list_subagent_models` the `modelSelectionSettings` opt-in
- * registers. On a deployment that mounts the agent-team bundle it also lists
- * that bundle's nine Team tools (own-layer registrations no restriction can
- * hide); the guard refuses every one of them (point 6). The delegated subagent
- * may call only the read-only names its declaration lists.
+ * delegation names — `subagent`, the one tool that STARTS work, and the
+ * read-only `list_subagent_models` the `modelDiscovery` option registers. On a
+ * deployment that mounts the agent-team bundle it also lists that bundle's nine
+ * Team tools (own-layer registrations no restriction can hide); the guard
+ * refuses every one of them (point 6). The delegated subagent may call only the
+ * read-only names its declaration lists.
  * Enforcement is ONE standing guard (point 6). The catalog is narrowed by one
- * per-agent depth-0 `restrict({ allow: [] })` mask (point 5), which is not
- * enforcement and never reaches a delegated child.
+ * per-agent depth-0 allow-list mask (point 5), which is not enforcement and
+ * never reaches a delegated child.
  *
  * No prompt text is written in this file: the per-model half is
  * `../shared/model-personas.json` and the delegation half is
@@ -36,54 +36,73 @@
  * delegated child, because the child's scope parent is the standing scope, not
  * the parent Agent's scope (the registry resolves an agent's standing mount by
  * matching its `scopeParentOf` against a mount key —
- * `agent-preset-registry/src/mount.ts:119-127`; DSH 0.2.1 no longer exports the
- * `standingMountFor()` helper that used to name this lookup).
+ * `agent-preset-registry/src/index.ts:171-176`, join `:317-329`; DSH 0.2.2 no
+ * longer exports the `standingMountFor()` helper that used to name this lookup).
  * `ToolRuntime.view()` reads a scope's own restrictions for the layer it
  * INHERITS and overlays its own registrations unfiltered
- * (`packages/core/tools/src/index.ts:1178-1209`), and `tools.restrict()` refuses
+ * (`packages/core/tools/src/index.ts:199-227`), and `tools.restrict()` refuses
  * an unscoped caller with exactly this instruction: "deny the tool for the
- * intended agent instead" (`:1097-1100`). What this plugin installs per agent at
+ * intended agent instead" (`:162-189`). What this plugin installs per agent at
  * `agent/created` is therefore the PERSONA alone (points 3-4); the catalog mask is
  * per-agent too, but it installs one macrotask after the dispatch (point 5) and
  * enforces nothing — the enforcement needs no scope of its own, because a guard is
- * read from the calling agent's chain (point 6).
+ * read from the calling agent's chain (point 6). One consequence moved in
+ * 0.2.2-rc.1: the delegation tools are no longer installed per Agent into the
+ * own layer (that path is gone from `@deepseek-ai/dsh-tool-subagent`), they are
+ * registered once on the preset's standing layer and are therefore INHERITED.
+ * The own-layer exemption now covers only what an agent registers itself (the
+ * Team tools), and the mask names the two delegation tools explicitly (point 5).
  *
  * (3) `agent/created` is awaited by the creation transaction before the Agent is
- * announced (`packages/core/agent/src/index.ts:537-559`), so the persona
+ * announced (`packages/core/agent/src/index.ts:562-586`), so the persona
  * registered there is in place before the session's first request; a
- * preset-scoped listener receives descendant Agents too (shipped precedent:
- * `dsh-tool-subagent`'s standing `modelSelectionSettings` install path).
+ * preset-scoped listener receives descendant Agents too — the shipped
+ * `tool-subagent` row itself registers its prompt section on this preset's
+ * standing composition (`packages/subagent/tool-subagent/src/index.ts:362-389`).
  *
  * (4) Creation is not the only way to arrive here. The Web UI can switch a
  * BLANK session's preset, which goes `agentPresets.select` → `recompose` →
  * `mount` + `emit('tools/change')` and emits NO `agent/created`
- * (`agent-preset-registry/src/index.ts:306-334`). `tools/change` reconciliation
+ * (`agent-preset-registry/src/index.ts:350-362` recompose, `:365-374` select).
+ * `tools/change` reconciliation
  * covers that path, HMR re-mounts, and `agent/created` on resume.
  *
  * (5) The TOP-LEVEL catalog is narrowed by ONE per-agent restriction, and that is
- * the only restriction in this plugin. A preset-plane `restrict({ allow: [] })` is
- * wrong (point 1: a delegated child joins the same standing scope, so it would
- * lose the rows it works through), but a restriction on the ROOT AGENT's own
- * scope is not on the child's chain (point 2) and filters only the surface that
- * scope INHERITS (`packages/core/tools/src/index.ts:1178-1219`): the own-layer
- * `subagent` / `list_subagent_models` stay visible while this preset's rows
- * (`read`, `write`, `edit`, `glob`, `grep`, `todo_*`, `job_*`) disappear from this
- * session's catalog. Two constraints keep it safe. First, it is a CATALOG mask,
- * never enforcement: the standing guard (point 6) is still what refuses calls.
- * Second, `restrict()` notifies `tools/change`
- * (`packages/core/scope/src/store.ts:226-266`; `notify` defaults to true) where
- * `tools.guard()` does not (`packages/core/tools/src/index.ts:1136-1142`), and
- * the official delegation plugin installs into a live Agent on that event
- * (`src/index.ts:693-698`) — the 1.7.3/1.7.5 collision. So the mask is installed
- * ONE MACROTASK LATER (one coalesced `setTimeout`), after the dispatch that
- * reported a switch has settled, and it is lifted both when the agent leaves this
- * preset and when this row unloads. Nothing here installs a restriction inside a
- * dispatch.
+ * the only restriction in this plugin. A preset-plane restriction is wrong
+ * (point 1: a delegated child joins the same standing scope, so it would lose the
+ * rows it works through), but a restriction on the ROOT AGENT's own scope is not
+ * on the child's chain (point 2) and filters only the surface that scope
+ * INHERITS (`packages/core/tools/src/index.ts:199-227`): the mask is
+ * `restrict({ allow: ['subagent', 'list_subagent_models'] })`, so exactly those
+ * two inherited delegation names stay visible while this preset's rows (`read`,
+ * `write`, `edit`, `glob`, `grep`, `todo_*`, `job_*`) disappear from this
+ * session's catalog. The allow-list is why this changed in 0.2.2-rc.1: the
+ * delegation tools used to be registered in each Agent's OWN layer, which no
+ * restriction filters, so `allow: []` was enough; the per-Agent install path is
+ * gone and the two names are now inherited from the preset's standing layer,
+ * where `allow: []` would mask them too and leave the session with no tool at
+ * all. `tools.restrict()` validates a named allow-list against the scope's
+ * inherited names (`packages/core/tools/src/index.ts:179-183`), so it must not
+ * run before the preset's rows are registered; the preset composition mounts
+ * before any Agent joins it, and a throw is caught and retried by the next
+ * `tools/change` (the mask map only records successful installs). Two
+ * constraints keep it safe. First, it is a CATALOG mask, never enforcement: the
+ * standing guard (point 6) is still what refuses calls. Second, `restrict()`
+ * notifies `tools/change` (`packages/core/scope/src/store.ts:226-235`;
+ * `notify` defaults to true) where `tools.guard()` does not
+ * (`packages/core/tools/src/index.ts:384-397`), so the mask is installed ONE
+ * MACROTASK LATER (one coalesced `setTimeout`), after the dispatch that reported
+ * a creation or switch has settled, and it is lifted both when the agent leaves
+ * this preset and when this row unloads. The 1.7.3/1.7.5 collision that
+ * originally forced the deferral (the official plugin installing into a live
+ * Agent on `tools/change`) cannot recur on 0.2.2-rc.1 — that per-Agent install
+ * path no longer exists — but staying out of the dispatch is still the safe
+ * shape and nothing here installs a restriction inside one.
  *
  * (6) The guard is the whole enforcement, and it is installed once on this
  * preset's STANDING scope rather than per agent. It is read from the CALLING
  * agent's chain (`guardReason()` walks `chainLayers(exec.agent)`,
- * `packages/core/tools/src/index.ts:1145-1154`), so one standing install covers
+ * `packages/core/tools/src/index.ts:392-405`), so one standing install covers
  * the root session and every delegated child of this preset, and the delegation
  * depth decides which names pass — root: `subagent` and the lister; child: its
  * declared read-only names and the lister. It also
@@ -147,7 +166,8 @@
  * `run_code` is the PTC mode presentation transport, not a capability: under
  * `ptc` a model-direct call may ONLY name it — every other name is collapsed and
  * denied BEFORE the policy pipeline, guards included
- * (`packages/core/tools/src/index.ts:1400-1408`) — while the nested dispatch it
+ * (`packages/core/tools/src/contracts.ts:193-199`; reserved-name rejects in
+ * `index.ts:145-147,176-177`) — while the nested dispatch it
  * performs keeps its `parent` and passes the same guards. The guard therefore
  * always allows it: denying it would leave a PTC-mode session unable to call its
  * single tool. It stays invisible in the catalog unless some row sets that mode,
@@ -170,8 +190,9 @@ export const inject = ['tools', 'systemPrompt']
 export const DELEGATOR_TOOL = 'subagent'
 
 /**
- * Read-only route discovery, registered by the `modelSelectionSettings` opt-in
- * (`@deepseek-ai/dsh-tool-subagent` `src/list-models.ts`). It changes nothing —
+ * Read-only route discovery, registered by `modelDiscovery: true` on one
+ * delegation row per tool scope (`@deepseek-ai/dsh-tool-subagent`
+ * `src/index.ts:196`, `src/list-models.ts:105-133`). It changes nothing —
  * it reports the routes this Session may name — so a top-level session may call
  * it too, and the delegation call is where a route is chosen.
  */
@@ -315,7 +336,7 @@ export function normalizeConfig(config, warn) {
  */
 export function installGuard(tools, decide, warn) {
   if (typeof tools.guard !== 'function') {
-    // Declared floor is ^0.2.1-rc.1; a build without `guard()` must degrade
+    // Declared floor is ^0.2.2-rc.1; a build without `guard()` must degrade
     // loudly instead of failing the preset's mount (same rule as
     // `presets/chat-agent/no-tools.mjs`).
     warn('this DSH build has no tools.guard(); this preset cannot refuse a call it does not allow')
@@ -512,10 +533,11 @@ export function apply(ctx, config) {
 
   /**
    * Hide this preset's inherited tool rows from ONE top-level session's catalog.
-   * `restrict({ allow: [] })` filters only the surface a scope INHERITS
-   * (`packages/core/tools/src/index.ts:1178-1219`), so the own-layer `subagent`
-   * and `list_subagent_models` stay visible. It is a catalog mask, not
-   * enforcement (point 5), and a delegated child never inherits it (point 2).
+   * `restrict({ allow: DELEGATOR_TOOLS })` filters only the surface a scope
+   * INHERITS (`packages/core/tools/src/index.ts:199-227`), so the two inherited
+   * delegation names stay visible and every other inherited row is masked. It is
+   * a catalog mask, not enforcement (point 5), and a delegated child never
+   * inherits it (point 2).
    * @param agent - the depth-0 agent to mask.
    */
   const installMask = (agent) => {
@@ -526,7 +548,7 @@ export function apply(ctx, config) {
       return
     }
     try {
-      masks.set(agent, tools.restrict({ allow: [] }))
+      masks.set(agent, tools.restrict({ allow: [...DELEGATOR_TOOLS] }))
     } catch (error) {
       warn(`masking agent ${String(agent?.id)} failed: ${String(error)}`)
     }

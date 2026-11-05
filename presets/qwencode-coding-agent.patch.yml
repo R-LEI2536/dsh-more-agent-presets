@@ -400,17 +400,18 @@
               - id: tool-subagent-control
                 name: '@deepseek-ai/dsh-tool-subagent-control'
 
-              - id: tool-subagent-list-agents
-                name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'
-
               - id: tool-subagent
                 name: '@deepseek-ai/dsh-tool-subagent'
                 config:
                   provider: spawn
                   toolName: subagent
-                  # Host-owned opt-in: the model may name provider/model from the
+                  # Model-facing opt-in: the model may name provider/model from the
                   # authorized list; omitting them still inherits the parent route.
-                  modelSelectionSettings: true
+                  # `modelDiscovery` registers the read-only `list_subagent_models`
+                  # (one discovery owner per tool scope), the same pair the shipped
+                  # standard preset mounts.
+                  modelSelection: true
+                  modelDiscovery: true
 
               - id: tool-subagent-fork
                 name: '@deepseek-ai/dsh-tool-subagent'

@@ -59,7 +59,7 @@
 
 ### 通用聊天模式 · 可派活 (`chat-subagent`)
 
-能力就是**一个能启动工作的工具**的聊天助手：`subagent`——外加模型选择开关注册的只读 `list_subagent_models`，它只报告本会话可以点名的路由。顶层会话的工具**目录里只有这两个派活名字**（部署挂了 agent-team bundle 时还会列出它的 9 个 Team 工具，见本节末尾）：一条 depth-0 目录 mask（`ctx.tools.restrict({ allow: [] })`，装在 Agent 自身 scope 上，由 `presets/chat-subagent/delegator.mjs` 安装）把 preset 继承来的行全部藏起来；而 restriction 从不过滤 agent 自身层，这两个派活工具恰好注册在那里。藏起来不等于强制：同插件在 preset 的 standing scope 上装**一条 guard**（`ctx.tools.guard(...)`），除下面两个名字之外的所有调用一律拒绝：`subagent` 与 `list_subagent_models`。mask 在 Agent scope 上，所以被派出去的子 agent 不会继承它（子 agent 的 scope 父节点是 preset 的 standing scope）；guard 则按**调用方** agent 的 scope 链取，所以同一条 standing 安装同时覆盖顶层会话和每个子 agent，由 delegation depth 决定放行哪些名字。mask 刻意晚一个 macrotask 安装（`agent/created` 之后、切换之后），离场时同样延后解除：`restrict()` 会发 `tools/change`，`guard()` 不会，而官方派活插件正是在这个事件上安装到活着的 agent 上——从 `agent/created` 同步装 agent-scope restriction 让同一个 scope 装了两次，第二次抛 `tool "list_subagent_models" is already registered in this scope`，它的 `install()` 在 `mount()` 之前中止，会话**一个派活工具都不剩**（1.7.3 实测）。因此该会话自己不能产生动作；它派只读子 agent 收集证据，再依据运行时以完成通知送达的报告自行判断并回答，而不是原样转述。（own-plane 的 9 个 Team 工具一律拒绝，见本节末尾。）DSH 0.2.1 直接删除了那两个背景键，所以**每次**派活都是异步的受管激活：调用立刻返回 `{ kind: 'activation', subagentId }`，子 agent 的终答随后以完成通知送达；它走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
+能力就是**一个能启动工作的工具**的聊天助手：`subagent`——外加模型选择开关注册的只读 `list_subagent_models`，它只报告本会话可以点名的路由。顶层会话的工具**目录里只有这两个派活名字**（部署挂了 agent-team bundle 时还会列出它的 9 个 Team 工具，见本节末尾）：一条 depth-0 目录 mask（`ctx.tools.restrict({ allow: ['subagent', 'list_subagent_models'] })`，装在 Agent 自身 scope 上，由 `presets/chat-subagent/delegator.mjs` 安装）把 preset 继承来的行收窄到这两个名字。DSH 0.2.2-rc.1 起派活工具注册在 preset 的 standing 层（per-Agent 安装路径已删除），所以 mask 改为 allow-list，不再依赖旧的「自身层豁免」。藏起来不等于强制：同插件在 preset 的 standing scope 上装**一条 guard**（`ctx.tools.guard(...)`），除下面两个名字之外的所有调用一律拒绝：`subagent` 与 `list_subagent_models`。mask 在 Agent scope 上，所以被派出去的子 agent 不会继承它（子 agent 的 scope 父节点是 preset 的 standing scope）；guard 则按**调用方** agent 的 scope 链取，所以同一条 standing 安装同时覆盖顶层会话和每个子 agent，由 delegation depth 决定放行哪些名字。mask 刻意晚一个 macrotask 安装（`agent/created` 之后、切换之后），离场时同样延后解除：`restrict()` 会发 `tools/change`，`guard()` 不会，而 0.2.1 线的官方派活插件正是在这个事件上安装到活着的 agent 上——从 `agent/created` 同步装 agent-scope restriction 让同一个 scope 装了两次，第二次抛 `tool "list_subagent_models" is already registered in this scope`，它的 `install()` 在 `mount()` 之前中止，会话**一个派活工具都不剩**（1.7.3 实测）。DSH 0.2.2-rc.1 已删除那条 per-Agent 安装路径，按源码判断撞名不会重现（rc.1 宿主上的活切换尚未实测）；mask 仍然不进创建/切换 dispatch，并且要等两个名字注册好之后才安装。因此该会话自己不能产生动作；它派只读子 agent 收集证据，再依据运行时以完成通知送达的报告自行判断并回答，而不是原样转述。（own-plane 的 9 个 Team 工具一律拒绝，见本节末尾。）DSH 0.2.1 直接删除了那两个背景键，所以**每次**派活都是异步的受管激活：调用立刻返回 `{ kind: 'activation', subagentId }`，子 agent 的终答随后以完成通知送达；它走 `spawn` provider，并用 `maxDepth: 1` 把递归预算写死。
 
 **真正干活的是被派出去的子 agent，它只读。** delegated child 会**加入父会话的同一个 preset**，因此继承同一批行，也继承同一条 guard；约束它的是 guard 的 depth 分支：子 agent 只能调用声明里 `subagentTools` 名单——默认 `read`、`glob`、`grep`、`read_image`、`list_directory`、`todo_write`、`job_list`——其余一律拒绝。名单里没有 `bash`、`write`、`edit`：子 agent 只做调查与汇报，不能跑命令、不能跑测试、不能改文件（可写版本记在 `TODO.md`）。其中两个名字取决于部署——`read_image` 只在挂了附件存储时存在，`list_directory` 来自 profile 里的第三方插件——现在已经不做探测：guard 按声明名单判定，没有任何行注册的名字只是不在目录里。mask 只装在父 Agent 的 scope、绝不装在 preset 层，原因正是这一点：preset 层的 restriction 同样在子 agent 的 scope 链上（它加入的就是同一个 preset），而 restriction 只能收窄，子 agent 解不开。
 
@@ -93,16 +93,16 @@
 
 ### 子 agent 模型选择（`qwencode` / `iflow` / `iflow-cre` / `pair` / `codex`）
 
-这 5 个编程 preset 与 `chat-subagent` 的委派行都开了 Host 的子模型选择开关（`modelSelectionSettings: true`），与随产品发布的 `standard`/`ptc`/`cordis` preset 是同一个一键 opt-in。顶层 Agent 因此多两样东西：
+这 5 个编程 preset 与 `chat-subagent` 的委派行都开了 Host 的子模型选择开关（`modelSelection: true` + `modelDiscovery: true`），与 0.2.2-rc.1 起随产品发布的 `standard`/`ptc`/`cordis` preset 是同一组开关——它们取代了 0.2.1 时代的 `modelSelectionSettings` 单键。顶层 Agent 因此多两样东西：
 
 - **`list_subagent_models`**：查这个会话能用的路由。不带参数列授权范围内的提供方，带 `provider` 列该提供方的模型，再带 `model` 看它的推理强度。
 - **`subagent`** 多了三个可选参数：`provider`、`model`、`reasoning_effort`。三个都省略时，子 agent 仍然继承父会话模型——这是官方默认，也正是没开这个开关前的行为。
 
-授权名单来自 Host 的 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行，就是 Web UI 里那一栏「允许 Agent 为子智能体选择模型」。名单外的显式路由会报错，报错信息列出可用路由。名单在会话创建时采样，只影响新会话。开关关掉（或名单为空）时行为回到「一律继承」，不报错。
+授权名单来自 Host 的 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行，就是 Web UI 里那一栏「允许 Agent 为子智能体选择模型」。名单外的显式路由会报错，报错只点名该路由、不列出可用路由（要列可用路由请调 `list_subagent_models`）。名单在会话创建时采样，只影响新会话。开关关掉（或名单为空）时行为回到「一律继承」，不报错。
 
-Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂，本仓库用的 profile 也都有。缺了它，开了这个开关的 preset 会**整块**挂载失败，报错原文是 `tool-subagent: \`modelSelectionSettings\` requires @deepseek-ai/dsh-tool-subagent/model-selection-settings in the Host scope`。
+那一行提供授权名单。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂，本仓库用的 profile 也都有。DSH 0.2.2-rc.1 起它不再是挂载依赖：缺了它开关照样挂上，只是显式路由被限制在父会话那条（`list_subagent_models` 也回落到父路由），所以少一行只损失更宽的名单，不会拖垮整个 preset。
 
-`chat-subagent` 也开了这个开关，所以聊天会话同样能给子 agent 指定模型。它的顶层目录不为空——两个派活名字，加上部署挂 agent-team bundle 时的 9 个 Team 工具（均不可调用）——只有一个能**启动工作**，所以它的不变量读作「只有一个能启动工作的工具」。开关还会把派活工具从 preset 平面挪进每个 agent 自身层：自身层正好是任何 restriction 都不过滤的层，这也是 depth-0 mask 可以写 `allow: []` 而不至于把派活本身藏掉的原因（见上一节）。`chat-agent` 没有任何工具行，不涉及。
+`chat-subagent` 也开了这个开关，所以聊天会话同样能给子 agent 指定模型。它的顶层目录不为空——两个派活名字，加上部署挂 agent-team bundle 时的 9 个 Team 工具（均不可调用）——只有一个能**启动工作**，所以它的不变量读作「只有一个能启动工作的工具」。DSH 0.2.2-rc.1 起派活工具留在 preset 的 standing 平面（开关不再按 Agent 安装），每个 Agent 都是继承它；因此 depth-0 mask 必须先 allow-list 这两个名字（见上一节），旧的「自身层豁免」不再成立。`chat-agent` 没有任何工具行，不涉及。
 
 `chat-subagent` 有一处不同：当授权名单非空时，它的 standing guard 会拒绝 depth-0 上不带 `provider` 和 `model` 的 `subagent` 调用，所以没调过 `list_subagent_models` 的会话不能静默用继承来的路由派活。名单为空、开关关闭、或这份策略读不到时，「省略即继承」仍然成立。5 个编程 preset 保持官方的省略即继承：它们的派活说明只是要求点名，不点名不会被拒。
 
@@ -139,8 +139,8 @@ Host 必须挂着那一行。随产品发布的 `dsh-base` + `dsh-web-app` 默�
 
 ## 环境要求
 
-- DeepSeek Harness **0.2.1-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在），并在 `engines.dsh` 里钉住这条下限，因此更旧的宿主会通过兼容门整包跳过本插件，请先升级宿主。
-- 子 agent 模型选择这一项需要 Host 挂 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行。随产品发布的 `dsh-base` + `dsh-web-app` 默认挂这一行；缺它会让开了该开关的 preset（5 个编程 preset 与 `chat-subagent`）整块挂载失败。
+- DeepSeek Harness **0.2.2-rc.1 及以上**。本版本是声明式 preset bundle（0.1.7 之前的 `.agent-presets` 目录安装器已不存在），并在 `engines.dsh` 里钉住这条下限，因此更旧的宿主——包括所有 0.2.1-rc 宿主——会通过兼容门整包跳过本插件，请先升级宿主。
+- 子 agent 模型选择这一项在 Host 挂 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 行时读取授权名单（随产品发布的 `dsh-base` + `dsh-web-app` 默认挂这一行）；缺它时显式选择被限制在父会话路由，而不是挂载失败。
 
 ## 安装
 

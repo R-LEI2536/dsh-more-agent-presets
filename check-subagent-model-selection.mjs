@@ -3,25 +3,28 @@
  *
  *   node check-subagent-model-selection.mjs
  *
- * `@deepseek-ai/dsh-tool-subagent` reads `modelSelectionSettings` from its row
- * config (default `false`, `src/index.ts:109`). With it off the tool schema has
- * no `provider`/`model`/`reasoning_effort` parameters and the child always
- * inherits the parent session's route (`install(ctx, undefined)`, `:608-611`);
- * with it on the Host's `subagent-model-selection` setting supplies the
- * authorized list and the session also gains `list_subagent_models`. The five
- * coding presets opt in, and so does `chat-subagent` — its catalog then holds
+ * `@deepseek-ai/dsh-tool-subagent` reads `modelSelection` from its row config
+ * (default `false`, `src/index.ts:83-87`). With it off the tool schema has no
+ * `provider`/`model`/`reasoning_effort` parameters and the child always
+ * inherits the parent session's route; with it on the Host's
+ * `subagent-model-selection` setting supplies the authorized list. Discovery is
+ * a separate switch: `modelDiscovery: true` on ONE delegation instance per tool
+ * scope registers the read-only `list_subagent_models` (`src/index.ts:196`), and
+ * a second owner in the same scope collides on the tool name. The five coding
+ * presets opt into both, and so does `chat-subagent` — its catalog then holds
  * two entries, one acting tool and one read-only lister, and `delegator.mjs`
- * decides its mask from where the tool registered (point 8). `chat-agent` has no
- * tool row at all.
+ * decides its mask from the inherited names (delegator point 5). `chat-agent`
+ * has no tool row at all.
  *
- * The opt-in is also a Host dependency: the row throws when the
- * `@deepseek-ai/dsh-tool-subagent/model-selection-settings` row is absent, and
- * ONE failed row marks the whole preset broken. Both READMEs must keep naming
- * that plugin, which is the second half of this check.
+ * The Host row is no longer a mount dependency on 0.2.2: the opt-in mounts
+ * without `@deepseek-ai/dsh-tool-subagent/model-selection-settings` and limits
+ * explicit selection to the parent route instead. Both READMEs must still name
+ * that row, because it is what grants the wider authorized list.
  *
  * `chat-subagent` is also pinned to keep its delegation row INSIDE a
- * `cordis:group`: a top-level row mounts earlier than a group's children, which
- * flips the preset-switch race and loses the tool (CHANGELOG 1.7.6).
+ * `cordis:group`: 0.2.2 removed the per-Agent install that made that position
+ * load-bearing during a preset switch, but the grouping is still the shape the
+ * five coding presets mount and moving it back buys nothing.
  *
  * Not in `files`, so it never ships.
  */
@@ -54,26 +57,40 @@ const configOf = (patch, rowId) => {
 
 const read = id => readFileSync(new URL(`./presets/${id}.patch.yml`, import.meta.url), 'utf8')
 
+/** Assert one row opts into BOTH halves of the 0.2.2 model-selection surface. */
+const assertOptedIn = (patch, spawn, label) => {
+  assert.match(spawn, /^\s+modelSelection: true$/m, `${label}: the spawn row must enable child route fields`)
+  assert.match(
+    spawn,
+    /^\s+modelDiscovery: true$/m,
+    `${label}: the spawn row must own discovery (the read-only list_subagent_models)`,
+  )
+  // Exactly one opt-in per file: a second one would mean the fork row or a
+  // provider-managed row grew a capability neither is supposed to have, and a
+  // second discovery owner in one scope collides on the tool name.
+  assert.equal(
+    [...patch.matchAll(/^\s+modelSelection: true$/gm)].length,
+    1,
+    `${label}: exactly one row opts in`,
+  )
+  assert.equal(
+    [...patch.matchAll(/^\s+modelDiscovery: true$/gm)].length,
+    1,
+    `${label}: exactly one row owns discovery`,
+  )
+}
+
 for (const id of OPTED_IN) {
   const patch = read(id)
   const spawn = configOf(patch, 'tool-subagent')
   assert.match(spawn, /^\s+provider: spawn$/m, `${id}: the delegation row must keep the spawn transport`)
   assert.match(spawn, /^\s+toolName: subagent$/m, `${id}: the delegation row must keep the \`subagent\` name`)
-  assert.match(
-    spawn,
-    /^\s+modelSelectionSettings: true$/m,
-    `${id}: the spawn row must opt into Host subagent model selection`,
-  )
-  // Exactly one opt-in per file: a second one would mean the fork row or a
-  // provider-managed row grew a capability neither is supposed to have.
-  assert.equal(
-    [...patch.matchAll(/^\s+modelSelectionSettings: true$/gm)].length,
-    1,
-    `${id}: exactly one row opts in`,
-  )
+  assertOptedIn(patch, spawn, id)
   // A fork child continues the parent conversation on the parent's route — the
-  // official standard preset leaves it off there, and so do we.
-  assert.doesNotMatch(configOf(patch, 'tool-subagent-fork'), /modelSelectionSettings/, `${id}: the fork row stays off`)
+  // official standard preset leaves selection off there, and so do we.
+  const fork = configOf(patch, 'tool-subagent-fork')
+  assert.doesNotMatch(fork, /^\s+modelSelection:/m, `${id}: the fork row stays off selection`)
+  assert.doesNotMatch(fork, /^\s+modelDiscovery:/m, `${id}: the fork row must not own discovery`)
 }
 
 // chat-subagent: in, for the same capability. Its catalog holds two entries —
@@ -84,30 +101,13 @@ const chatSubagent = read('chat-subagent')
 const chatSpawn = configOf(chatSubagent, 'tool-subagent')
 assert.match(chatSpawn, /^\s+provider: spawn$/m, 'chat-subagent: the delegation row must keep the spawn transport')
 assert.match(chatSpawn, /^\s+toolName: subagent$/m, 'chat-subagent: the delegation row must keep the `subagent` name')
-assert.match(
-  chatSpawn,
-  /^\s+modelSelectionSettings: true$/m,
-  'chat-subagent: the delegation row must opt into Host subagent model selection',
-)
-assert.equal(
-  [...chatSubagent.matchAll(/^\s+modelSelectionSettings: true$/gm)].length,
-  1,
-  'chat-subagent: exactly one row opts in',
-)
+assertOptedIn(chatSubagent, chatSpawn, 'chat-subagent')
 assert.doesNotMatch(chatSubagent, /- id: tool-subagent-fork/, 'chat-subagent mounts no fork row')
 
 // The delegation row must be a CHILD of a `cordis:group`, never a top-level
-// row. Measured on 2026-10-18: the incoming preset's per-Agent install races the
-// outgoing preset's asynchronous disposal inside one `tools/change` dispatch,
-// and the race order is preset MOUNT order. A top-level row mounts before a
-// group's children, so it put this preset's listener FIRST (index 2 of 11,
-// before `standard` at 3), and every switch INTO `chat-subagent` registered
-// `list_subagent_models` before the outgoing copy was gone: the duplicate made
-// `install()` abort before `mount()`, the failed fiber stayed cached, and the
-// session kept neither tool (CHANGELOG 1.7.5/1.7.6). Group-nested, the listener
-// registers after every other preset's, so the outgoing removal runs first and
-// the switch succeeds. This pin exists so a future edit cannot silently move the
-// row back to the top level.
+// row. 0.2.2-rc.1 removed the per-Agent install that made this load-bearing
+// (one registration per preset scope now), but the shape stays pinned: it is
+// what the five coding presets mount, and moving it buys nothing.
 const indentationOf = rowId => new RegExp(`^([ \\t]*)- id: ${rowId}$`, 'm').exec(chatSubagent)?.[1].length
 const delegatorIndent = indentationOf('delegator')
 const delegationIndent = indentationOf('tool-subagent')
@@ -115,7 +115,7 @@ assert.equal(typeof delegatorIndent, 'number', 'chat-subagent: the delegator row
 assert.equal(typeof delegationIndent, 'number', 'chat-subagent: the delegation row must stay in the declaration')
 assert.ok(
   delegationIndent > delegatorIndent,
-  'chat-subagent: the delegation row must be nested inside a group, not top-level (preset-switch order)',
+  'chat-subagent: the delegation row must be nested inside a group, not top-level',
 )
 assert.match(
   chatSubagent,
@@ -127,8 +127,9 @@ assert.match(
 const chatAgent = read('chat-agent')
 assert.doesNotMatch(chatAgent, /^\s+- id: tool-subagent$/m, 'chat-agent mounts no delegation row')
 
-// The opt-in is only mountable where the Host mounts its settings row; both
-// READMEs document that dependency by naming the plugin's subpath.
+// The Host row still supplies the authorized list, so both READMEs document it
+// by naming the plugin's subpath. On 0.2.2 its absence no longer breaks the
+// mount, but it is what widens explicit selection beyond the parent route.
 for (const readme of ['README.md', 'README.zh.md']) {
   const text = readFileSync(new URL(`./${readme}`, import.meta.url), 'utf8')
   assert.match(

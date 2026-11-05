@@ -5,6 +5,7 @@ tutorial/
 
 # Package manager lock files (this project has no dependencies)
 pnpm-lock.yaml
+pnpm-workspace.yaml
 package-lock.json
 yarn.lock
 
@@ -45,6 +46,9 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# pnpm store used by the upgrade/verification installs (read-only default store)
+.pnpm-cache/
 
 # Ownership markers (created during installation, not part of source)
 .dsh-preset-owner.json

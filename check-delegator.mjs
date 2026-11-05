@@ -4,7 +4,7 @@
  *   node check-delegator.mjs
  *
  * Enforcement is ONE guard on the preset's STANDING scope. The catalog is
- * narrowed by ONE per-agent `restrict({ allow: [] })` on a depth-0 agent's own
+ * narrowed by ONE per-agent allow-list restriction on a depth-0 agent's own
  * scope; both halves are load-bearing:
  *
  * - A restriction must be per AGENT, never preset-plane: a standing one is on a
@@ -12,13 +12,17 @@
  *   strip the rows the child works through. This file therefore refuses to serve
  *   `restrict()` on the standing scope: that regression fails here, not live.
  * - A restriction on the ROOT agent's own scope is off the child's chain and
- *   filters only what that scope INHERITS, so the own-layer `subagent` and
- *   `list_subagent_models` stay visible.
- * - `restrict()` notifies `tools/change` where `tools.guard()` does not — which
- *   is how 1.7.3 ended with two installs into one agent scope, a duplicate
- *   `list_subagent_models`, and a session that had no delegation tool at all.
+ *   filters only what that scope INHERITS. Since 0.2.2-rc.1 the delegation tools
+ *   live on the preset's standing layer (the per-Agent install is gone), so the
+ *   mask must ALLOW them by name: `restrict({ allow: ['subagent',
+ *   'list_subagent_models'] })`. The earlier `allow: []` kept them visible only
+ *   because they were own-layer registrations, which no restriction filters;
+ *   with that exemption gone the empty filter would mask both.
+ * - `restrict()` notifies `tools/change` where `tools.guard()` does not, and the
+ *   mask names tools that must already be registered (an unknown name throws).
  *   The mask is therefore installed one macrotask after the dispatch, which every
- *   mask test below pins with `await tick()`.
+ *   mask test below pins with `await tick()`; a throw is caught and retried on
+ *   the next `tools/change`.
  * - A guard is read from the CALLING agent's chain, so the standing install
  *   covers the root session and every child, and the delegation depth decides
  *   which names pass. depth 0 admits `subagent` and the lister; the child branch
@@ -150,7 +154,8 @@ function fakeHost({ liveAgents = [], presetOf = () => undefined, noGuard = false
     get(name) {
       if (name === 'agents') return { list: () => liveAgents }
       if (name === 'agentPresets') return noPresets ? undefined : { composedPreset: agentCtx => presetOf(agentCtx) }
-      // The route policy the `modelSelectionSettings` opt-in registers. `undefined`
+      // The route policy `@deepseek-ai/dsh-tool-subagent` registers (0.2.2 registers
+      // the projection unconditionally, modelSelection or not). `undefined`
       // here means this build mounts no such projection at all; a stated value —
       // including `null`, or a function that throws — models a registered unit.
       if (name === 'sessionProjections' && routePolicy !== undefined) {
@@ -421,7 +426,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // either scope.
   assert.equal(agent.toolsSeen.restrictCalls, 0)
   await tick()
-  assert.deepEqual(agent.toolsSeen.restrictions, [{ allow: [] }])
+  assert.deepEqual(agent.toolsSeen.restrictions, [{ allow: DELEGATOR_TOOLS }])
   assert.equal(agent.toolsSeen.restrictCalls, 1)
   assert.equal(worker.toolsSeen.restrictCalls, 0)
   assert.deepEqual(agent.toolsSeen.guards, [])
@@ -629,11 +634,13 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
 
 // ── the depth-0 catalog mask: install, lift, dispose ─────────────────────────
 //
-// The mask is `restrict({ allow: [] })` on a ROOT agent's own scope: it filters
-// only the surface that scope inherits, so the own-layer `subagent` and
-// `list_subagent_models` stay. A delegated child is parented to the standing
-// scope, not to the root Agent's scope, so it is never masked. Installing a
-// restriction notifies `tools/change`, hence the one-macrotask delay.
+// The mask is `restrict({ allow: DELEGATOR_TOOLS })` on a ROOT agent's own
+// scope: it filters only the surface that scope inherits, so the two inherited
+// delegation names stay and every other preset row disappears. A delegated
+// child is parented to the standing scope, not to the root Agent's scope, so it
+// is never masked. Installing a restriction notifies `tools/change`, hence the
+// one-macrotask delay; the named tools must already be registered, which the
+// mounted preset composition guarantees.
 
 {
   const root = fakeAgent({ id: 'root-masked' })
@@ -645,7 +652,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   // revision — is reconciled by the initial call, not by `agent/created`.
   apply(host.ctx, CONFIG)
   await tick()
-  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: DELEGATOR_TOOLS }])
   assert.equal(root.toolsSeen.restrictCalls, 1)
   assert.equal(child.toolsSeen.restrictCalls, 0)
   assert.deepEqual(host.warnings, [])
@@ -655,7 +662,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   host.fire('tools/change', {})
   await tick()
   assert.equal(root.toolsSeen.restrictCalls, 1)
-  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: DELEGATOR_TOOLS }])
 
   // Leaving this preset lifts the mask; coming back installs it again.
   composed = 'pair-coding-agent'
@@ -665,7 +672,7 @@ assert.deepEqual(configWarnings.slice(-1), ['`delegationNote` is blank: the ship
   composed = 'chat-subagent'
   host.fire('tools/change', {})
   await tick()
-  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: [] }])
+  assert.deepEqual(root.toolsSeen.restrictions, [{ allow: DELEGATOR_TOOLS }])
 
   // Disposing the row (HMR, a removed patch) lifts the mask it installed, and
   // nothing queued puts it back.
@@ -798,8 +805,11 @@ assert.match(patch, /clearly labelled as hypotheses/)
 assert.doesNotMatch(patch, /^\s+agentPreset:/m, 'a delegated child must keep joining this preset')
 // The opt-in is what gives the root session a model to name and a lister to read
 // it from; without it the guard's allow-list is right but the capability is gone.
-// The header comment mentions the key too, so the count is pinned to the row.
-assert.equal(patch.match(/^\s+modelSelectionSettings: true$/gm)?.length, 1)
+// Both halves are pinned on the row: `modelSelection` for the route fields and
+// `modelDiscovery` for the lister (0.2.2 separated them). The header comment
+// mentions the keys too, so the count is pinned to the row.
+assert.equal(patch.match(/^\s+modelSelection: true$/gm)?.length, 1)
+assert.equal(patch.match(/^\s+modelDiscovery: true$/gm)?.length, 1)
 // A row that omits a `.required()` Config key fails to mount, and ONE failed row
 // marks the whole preset broken — observed live as
 // `tool-todo (@deepseek-ai/dsh-tool-todo): invalid config: $.allowParallelInProgress

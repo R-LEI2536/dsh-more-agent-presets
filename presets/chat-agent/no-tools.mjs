@@ -11,7 +11,7 @@
  * parented to that same scope (`bindScopeParent(agentKey, standingKey)`). A
  * restriction registered here sits on each selecting Agent's OWN scope chain,
  * and `ToolRuntime.view()` intersects the restrictions of every layer on the
- * chain (`packages/core/tools/src/index.ts:1198-1200`) — an ancestor's
+ * chain (`packages/core/tools/src/index.ts:211-218`) — an ancestor's
  * restriction reaches every scope nested inside it (`tests/scoped.spec.ts`
  * "lets an ancestor's restriction reach every scope nested inside it"). Other
  * presets keep the full host surface.
@@ -28,11 +28,11 @@
  *
  * (2) `ctx.tools.guard(...)` — the Agent's OWN registrations, which no
  * restriction can reach, from any scope. `view()` builds the inherited map by
- * SKIPPING the own layer (`packages/core/tools/src/index.ts:1187-1191`) and
+ * SKIPPING the own layer (`packages/core/tools/src/index.ts:199-227`) and
  * then overlays that layer's registrations without filtering them
- * (`:1202-1209`); its doc comment states the rule plainly — "A restriction
+ * (`:219-225`); its doc comment states the rule plainly — "A restriction
  * filters what a scope inherits … and never what its OWN layer registers"
- * (`:1163-1174`). The exemption exists so a delegated child keeps the
+ * (`:191-196`). The exemption exists so a delegated child keeps the
  * structured-output tool it answers through. The shipped case is Team tools:
  * `tool-agent-team` registers them into `agent.ctx`
  * (`packages/experimental/tool-agent-team/src/index.ts:164-167`) — and not only
@@ -83,7 +83,7 @@ export function apply(ctx) {
 
   // Plane 2 — the agent's own registrations, which the restriction above cannot
   // reach (see the header). Optional API: the declared floor is
-  // `^0.2.1-rc.1`, so a build without `guard()` must degrade loudly rather than
+  // `^0.2.2-rc.1`, so a build without `guard()` must degrade loudly rather than
   // fail the preset composition.
   if (typeof ctx.tools.guard !== 'function') {
     // `ctx.logger`, not `ctx.get('logger')`: cordis assigns the logger in the

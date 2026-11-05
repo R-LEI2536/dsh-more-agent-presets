@@ -35,12 +35,12 @@ agent 创建时的 profile 默认值。表与插件位于 `presets/shared/`（`m
 _Avoid_: 静态 persona（固定一句文案的 persona 行）
 
 **Tool mask**:
-preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。restriction 只管**继承**面：agent **自身层**注册的工具不受任何 restriction 约束（`view()` 跳过 own 层，再把它无条件叠加进可见集），own 层只能由 guard 在调用时拦。
+preset 层小插件以 `ctx.tools.restrict({ allow: [] })` 屏蔽 agent 继承的工具面（全局层 + 祖先 scope）；restriction 按 scope 链生效——preset 的 standing scope 是每个选中 agent 的父 scope，因此只影响该 preset。restriction 只管**继承**面：agent **自身层**注册的工具不受任何 restriction 约束（`view()` 跳过 own 层，再把它无条件叠加进可见集），own 层只能由 guard 在调用时拦。chat-agent 用空 allow-list 即可；chat-subagent 的 **Catalog mask** 装在单个 agent scope 上，且必须写成两个名字的 allow-list（见下）。
 _Avoid_: `toolFilter`（0.2.1 起 `@deepseek-ai/dsh-tool-subagent` 已删除该配置键：子 agent 的工具集只由它所在的 preset 决定）
 
 **Catalog mask**:
-`chat-subagent` 顶层会话的目录收窄：装在该 agent **自身 scope** 上的一条 `ctx.tools.restrict({ allow: [] })`，由 **Delegator preset** 的 `delegator.mjs` 只对 depth-0 的 agent 安装。restriction 只过滤 scope **继承**来的面，所以自身层注册的 `subagent` 与 `list_subagent_models` 留下，其余 preset 行从目录里消失。它只管目录、不是强制面（拒绝调用的是 **Delegation guard**），并且必须**延后一个 macrotask** 安装与解除（多次请求合并成一次 `setTimeout(…, 0)`）：`restrict()` 会发 `tools/change`，与官方派活的 per-Agent 安装撞车，延后到创建/切换 dispatch 之外就不会重名（1.7.3 实测）。子 agent 的 scope 父节点是 preset 的 standing scope、不是父 Agent scope，所以它永远继承不到这条 mask。
-_Avoid_: 把它当强制面、把 `restrict({ allow: [] })` 写回 preset 层（那才是 **Tool mask**，子 agent 会一起被封）
+`chat-subagent` 顶层会话的目录收窄：装在该 agent **自身 scope** 上的一条 `ctx.tools.restrict({ allow: ['subagent', 'list_subagent_models'] })`，由 **Delegator preset** 的 `delegator.mjs` 只对 depth-0 的 agent 安装。restriction 只过滤 scope **继承**来的面；0.2.2-rc.1 起 `subagent` 与 `list_subagent_models` 注册在 preset 的 standing 层（`@deepseek-ai/dsh-tool-subagent` 的 per-Agent 安装路径已删除），因此它们是**继承**来的，必须由 allow-list 点名保留，其余 preset 行才从目录里消失。它只管目录、不是强制面（拒绝调用的是 **Delegation guard**），并且必须**延后一个 macrotask** 安装与解除（多次请求合并成一次 `setTimeout(…, 0)`）：`restrict()` 会发 `tools/change`，不该落在创建/切换 dispatch 里；带名字的 allow-list 还要求两个工具已注册（未知名会抛错，靠下一次 `tools/change` 重试）。子 agent 的 scope 父节点是 preset 的 standing scope、不是父 Agent scope，所以它永远继承不到这条 mask。
+_Avoid_: 把它当强制面、把 `restrict({ allow: [] })` 写回 preset 层（那才是 **Tool mask**，子 agent 会一起被封）、在 0.2.2 上继续用空 allow-list（会把继承来的两个派活名字一起藏掉）
 
 **Delegator preset**:
 顶层会话**只被允许调用一个能启动工作的工具**（`subagent`）的 preset；开了 **Subagent model selection** 之后另有只读的 `list_subagent_models`，所以不变量读作「只有一个能**启动工作**的工具」。不变量说的是**能调用**，不是**目录里只有它**：本 preset 的 `config.plugins` 必须挂真实的工具行（被派出去的子 agent 要用这些行），这些行留在 preset 平面供子 agent 继承，顶层会话的目录则由 **Catalog mask** 收窄到那两个名字；**Delegation guard** 在调用时兜底拒绝其余一切。部署挂了 agent-team bundle 时，那 9 个 Team 工具仍会列在顶层目录里（注册在 root agent 自身层、目录 mask 藏不掉），但 guard 一个都不放行：它们面向 Team 成员，而 delegated child 不是 Team 成员，任何 Team 调用都到不了它。
@@ -67,21 +67,22 @@ _Avoid_: `{{cwd}}`、把 `session.header.cwd` 当当前目录
 _Avoid_: worker（内部叫法，不是产品术语）
 
 **Subagent model selection**:
-委派行 `@deepseek-ai/dsh-tool-subagent` 的 `modelSelectionSettings` opt-in（默认 `false`）。开启后顶层 Agent 用
-`list_subagent_models` 查 Host 授权名单，并在派活时点名 `provider`/`model`/`reasoning_effort`；三个都省略就继承父会话模型。
-名单由 Host 的设置行 `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；缺这一行会让开了 opt-in 的 preset
-整块挂载失败，而开关只是关着时行为退回继承、不报错。开启后工具从 preset 平面挪进**每个 agent 自身层**，而自身层
-正好是 restriction 不过滤的层——所以 **Catalog mask** 写 `allow: []` 也藏不掉这两个派活名字，强制面因此只能是
+委派行 `@deepseek-ai/dsh-tool-subagent` 的模型选择开关，0.2.2-rc.1 起拆成两个键：`modelSelection`（顶层 Agent 可在派活时点名
+`provider`/`model`/`reasoning_effort`；默认 `false`）与 `modelDiscovery`（注册只读的 `list_subagent_models`；默认 `false`，同一
+tool scope 只允许一个 owner）。两者都省略就继承父会话模型。授权名单由 Host 的设置行
+`@deepseek-ai/dsh-tool-subagent/model-selection-settings` 提供；0.2.2-rc.1 起缺这一行**不再**让 preset 挂载失败，只是显式路由被
+限制在父会话那条（`list_subagent_models` 也回落到父路由）。0.2.2-rc.1 还删除了开关的 per-Agent 安装：派活工具与 lister 注册在
+**preset 的 standing 层**，每个 Agent 继承它们——所以 **Catalog mask** 必须用两个名字的 allow-list，强制面仍然只能是
 **Delegation guard**。本 bundle 的 5 个编程 preset 与
 `chat-subagent` 都开启；后者因此多一个只读的 `list_subagent_models`，**Delegator preset** 的不变量随之读作「只有一个能
 动手的工具」。`chat-subagent` 的 **Delegation guard** 另加一条保险：这份名单非空时，depth-0 的 `subagent` 调用必须点名
 `provider`+`model`，不点名会被拒；名单为空、开关关闭或策略读不到时仍走「省略即继承」（fail open）。
 落脚点由终端那一行报出：`<presetId>/subagent-route-log: subagent <id> route <provider>/<model>`（5 个编程 preset 挂
 `presets/shared/subagent-route-log.mjs`；`chat-subagent` 由自己的 `delegator` 打同一行）。
-_Avoid_: 子模型、子 agent 默认模型（都不指这条 opt-in 与它的授权名单）
+_Avoid_: 子模型、子 agent 默认模型（都不指这组开关与它的授权名单）、把 `modelSelectionSettings` 当现行键名（0.2.2 已改名）
 
 **Preset switch**:
-Web 新会话先按默认 preset 建好，再通过 `agentPresets.select` → `recompose` 换到用户选的 preset：只重挂 agent 的 scope 父链，并**只发一次** `tools/change`。各 preset 的派活实例按**挂载顺序**处理这条事件；“装新 / 拆旧”是异步竞态，incoming 的监听器更早时，`list_subagent_models` 会在旧注册还在时重名，导致会话两个派活工具全丢（1.7.5 实测）。因此派活行的**位置**属于设计：`chat-subagent` 的 `tool-subagent` 必须留在 `cordis:group` 内，让监听器排到最后一个；移回顶层会重现故障（1.7.6 起由 `check-subagent-model-selection.mjs` 钉死）。反向切换（空白会话改选到更早名次的 preset）仍有同样缺陷，属上游问题。
+Web 新会话先按默认 preset 建好，再通过 `agentPresets.select` → `recompose` 换到用户选的 preset：只重挂 agent 的 scope 父链，并**只发一次** `tools/change`。0.2.1 时代各 preset 的派活实例按**挂载顺序**处理这条事件，“装新 / 拆旧”的异步竞态会让 `list_subagent_models` 在旧注册还在时重名，导致会话两个派活工具全丢（1.7.5 实测）；0.2.2-rc.1 删除了 per-Agent 安装、改为每个 preset scope 只注册一次，按源码判断该竞态已不成立。因此 `chat-subagent` 的 `tool-subagent` 行仍留在 `cordis:group` 内（与 5 个编程 preset 同形，且 `check-subagent-model-selection.mjs` 钉死），但行位置已不再是缺陷绕法；宿主升级后仍需实测一次切换。
 _Avoid_: “换模式”（preset 不是 permission mode）、把它当成配置问题（它是挂载顺序）
 
 ## Flagged ambiguities

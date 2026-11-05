@@ -2,7 +2,7 @@
  * subagent-route-log — one `info` line per delegated child, naming its route.
  *
  * A child does not choose a route by itself: it INHERITS the parent's unless the
- * delegation call named one, and with `modelSelectionSettings` on (the five
+ * delegation call named one, and with `modelSelection` on (the five
  * coding presets) a call may name `provider`/`model`/`reasoning_effort` from the
  * Host's authorized list. Either way the terminal otherwise says nothing about
  * which model did the work, and a child that quietly ran on an unexpected route

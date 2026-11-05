@@ -1,13 +1,19 @@
 /**
- * Runnable offline check for the DSH 0.2.1 contract this bundle is built against.
+ * Runnable offline check for the DSH 0.2.2 contract this bundle is built against.
  *
- *   node check-dsh-021-contract.mjs
+ *   node check-dsh-022-contract.mjs
  *
- * The 0.2.1 upgrade removed three config keys and one prompt variable from the
- * surface this bundle uses. Every removal fails LOUDLY — at load for the config
- * keys, before the first request for the variable — but only on a 0.2.1 host,
- * and a tree that is clean on 0.2.0rc violates all of them silently. This file
- * pins the four rules:
+ * The 0.2.1 line removed or turned into loud rejections four row-config keys
+ * (`persona`/`toolFilter` throw; `backgroundMode`/`enableRunInBackground` left
+ * the schema) and removed one prompt variable; the 0.2.2 line renamed the
+ * model-selection opt-in, retired a subpath export and moved the vendor set.
+ * Only some of those removals
+ * fail loudly: `persona`/`toolFilter` throw in `apply()`, the retired subpath
+ * fails at module resolution, and a removed prompt variable fails prompt
+ * assembly — but a key that merely left the schema (`modelSelectionSettings`,
+ * `backgroundMode`, `enableRunInBackground`) is silently carried and ignored,
+ * which costs the capability without any error. That silent class is why this
+ * file checks the tree statically instead of trusting a host to complain.
  *
  * 1. `@deepseek-ai/dsh-tool-subagent` no longer accepts `backgroundMode` or
  *    `enableRunInBackground` (dropped from the schema) and THROWS on `persona`
@@ -22,20 +28,31 @@
  *    `agent-loop` supplies `provider`/`model`, and each preset's own
  *    `prompt-sections.mjs` registers the rest (`shell_tool`, `platform`,
  *    `os_version`, `today_date`).
- *
  * 5. A durable message a plugin contributes must not use the retired
  *    `kind: 'plugin'` wrapper: `assertV4MessageSources` refuses it at encode
  *    time — "format v4 message requires a producer-owned source kind",
  *    `packages/session/session-format-v3-to-v4/src/message-sources.ts`. A live
  *    producer names itself; the shipped `time-context` and `tmux-context` rows
  *    both write `{ kind: name, form: 'snapshot', sections: [...] }`.
+ * 6. The model-selection opt-in is `modelSelection` (with `modelDiscovery` for
+ *    the read-only lister); `modelSelectionSettings` is not a config key any
+ *    more. Schemastery validation is non-strict (`strict = false`), so a row
+ *    that carries the stale key still mounts — it just silently loses the route
+ *    fields and the lister, which is exactly the failure mode this rule exists
+ *    to catch.
+ * 7. `@deepseek-ai/dsh-tool-subagent-control/list-agents` is not an export any
+ *    more: the control package registers `send_message`, `interrupt_agent` and
+ *    `list_agents` together from one row (`src/index.ts:18,28-30,75-76`;
+ *    `package.json` proves only the export map), so a row naming the retired
+ *    subpath fails module resolution.
  *
- * Comments are excluded from 3, 4 and 5 on purpose — the upgrade notes name the
- * removed key and the removed variable in prose — while block scalars
+ * Comments are excluded from 3 through 7 on purpose — the upgrade notes name
+ * the removed key, subpath and variable in prose — while block scalars
  * (`text: |`, `prefix: >`, `section: |`, …) count as live text, because they are
  * rendered into the prompt verbatim.
  *
- * Not in `files`, so it never ships.
+ * Not in `files`, so it never ships. Renamed from `check-dsh-021-contract.mjs`
+ * in 1.9.0; rules 1-5 are the 0.2.1 rules the 0.2.2 line still enforces.
  */
 
 import assert from 'node:assert/strict'
@@ -48,7 +65,7 @@ const read = path => readFileSync(new URL(path, ROOT), 'utf8')
 const BLOCK_KEY = /^\s*(?:text|prefix|suffix|section|description|name):\s*[|>][-+]?\s*$/
 /** Any `key:` line, for the row-config surface below. */
 const KEY_LINE = /^\s*([A-Za-z][A-Za-z0-9_]*):/
-/** Keys DSH 0.2.1 rejects on a `@deepseek-ai/dsh-tool-subagent` row. */
+/** Keys the 0.2.2 `@deepseek-ai/dsh-tool-subagent` row rejects or ignores. */
 const FORBIDDEN_ROW_KEYS = ['backgroundMode', 'enableRunInBackground', 'persona', 'toolFilter']
 /** Variables `@deepseek-ai/dsh-agent-loop` registers globally. */
 const BASE_VARIABLES = ['provider', 'model']
@@ -136,30 +153,46 @@ assert.ok(Array.isArray(patches) && patches.length > 0, 'package.json must decla
 // The bundle's own compatibility gate reads `engines.dsh` first and ignores the
 // DSH peers once it exists. An EXACT pin is fatal on a later runtime: the gate
 // tests `semver.satisfies(runtime, range, { includePrerelease: true })`, so
-// `0.2.1-rc.2` does not admit `0.2.1-rc.5` — and a bundle (`dsh.bundle`) is
+// `0.2.2-rc.1` does not admit `0.2.2-rc.2` — and a bundle (`dsh.bundle`) is
 // skipped WHOLE, so every preset would disappear instead of one disabled row.
-// The gate range is therefore `^0.2.1-rc.1`: it admits rc.1 … rc.5 and rejects
-// 0.3.0-0, while a bare `^0.2.1` would reject every prerelease runtime.
+// The gate range is therefore `^0.2.2-rc.1`: it admits rc.1 and later 0.2.x
+// prereleases, and rejects `0.3.0-0`. Unlike 1.8.x it is not a corridor floor:
+// the two row-config keys this release uses (`modelSelection`,
+// `modelDiscovery`) do not exist on the 0.2.1 line, so an older host must skip
+// the bundle loudly instead of mounting seven broken presets.
 assert.equal(
   manifest.engines?.dsh,
-  '^0.2.1-rc.1',
-  'engines.dsh must admit the 0.2.1-rc.* line, not pin one runtime',
+  '^0.2.2-rc.1',
+  'engines.dsh must admit the 0.2.2-rc.* line, not pin one runtime',
 )
 assert.doesNotMatch(manifest.engines?.dsh ?? '', /^\d/, 'engines.dsh must not be an exact version')
-// The versions the bundle SHIPS stay EXACT `0.2.1-rc.5` — the runtime this
-// release targets. A range here let pnpm resolve rc.4 copies into a profile
-// while an rc.2 host was running, and the profile copy shadowed the host's
-// (1.8.3); exact versions keep one install on one runtime. Nothing in the
-// manifest may stay on the 0.2.0-rc line.
+// The versions the bundle SHIPS stay EXACT `0.2.2-rc.1` — the runtime this
+// release targets. A range here let pnpm resolve host copies into a profile
+// while another host ran, and the profile copy shadowed the host's (1.8.3);
+// exact versions keep one install on one runtime. Nothing in the manifest may
+// stay on the 0.2.1-rc line.
 for (const field of ['dependencies', 'peerDependencies']) {
   for (const [name, range] of Object.entries(manifest[field] ?? {})) {
     if (!name.startsWith('@deepseek-ai/dsh-')) continue
-    assert.equal(range, '0.2.1-rc.5', `${name} (${field}) must pin 0.2.1-rc.5, got ${range}`)
+    assert.equal(range, '0.2.2-rc.1', `${name} (${field}) must pin 0.2.2-rc.1, got ${range}`)
   }
 }
 assert.ok(
-  !JSON.stringify(manifest).includes('0.2.0-rc'),
-  'no manifest range may stay on the 0.2.0-rc line',
+  !JSON.stringify(manifest).includes('0.2.1-rc'),
+  'no manifest range may stay on the 0.2.1-rc line',
+)
+// The 0.2.2 vendor set is cordis 4.1.0 and cordis-plugin-loader 1.1.0. A tilde
+// on the 0.2.1 line (`~4.0.5` / `~1.0.6`) excludes both, so the peer ranges must
+// be caret-or-wider; they do not enter the compatibility gate.
+assert.equal(
+  manifest.peerDependencies?.['@deepseek-ai/cordis'],
+  '^4.0.5',
+  '@deepseek-ai/cordis must cover the 0.2.2 vendor set (4.1.0), not cap below it',
+)
+assert.equal(
+  manifest.peerDependencies?.['@deepseek-ai/cordis-plugin-loader'],
+  '^1.0.6',
+  '@deepseek-ai/cordis-plugin-loader must cover the 0.2.2 vendor set (1.1.0), not cap below it',
 )
 
 for (const spec of patches) {
@@ -177,6 +210,10 @@ for (const spec of patches) {
         `${label}: row \`${row.id}\` carries \`${forbidden}\`, which @deepseek-ai/dsh-tool-subagent rejects in 0.2.1`,
       )
     }
+    assert.ok(
+      !keys.includes('modelSelectionSettings'),
+      `${label}: row \`${row.id}\` carries \`modelSelectionSettings\`, renamed to \`modelSelection\` + \`modelDiscovery\` in 0.2.2`,
+    )
     const maxDepth = /^\s+maxDepth:\s*(\S+)\s*$/m.exec(row.lines.join('\n'))?.[1]
     if (maxDepth !== undefined) {
       assert.ok(
@@ -185,6 +222,18 @@ for (const spec of patches) {
       )
     }
   }
+
+  // 6 + 7: the retired opt-in key and the retired subpath export.
+  assert.doesNotMatch(
+    live,
+    /^\s+modelSelectionSettings:/m,
+    `${label}: live config carries the retired \`modelSelectionSettings\` key (renamed to \`modelSelection\` + \`modelDiscovery\`)`,
+  )
+  assert.doesNotMatch(
+    live,
+    /tool-subagent-control\/list-agents/,
+    `${label}: live config names the retired \`@deepseek-ai/dsh-tool-subagent-control/list-agents\` export`,
+  )
 
   // 3 + 4: every variable in live text needs a registrant.
   const declared = new Set(BASE_VARIABLES)
@@ -236,4 +285,4 @@ for (const path of [...shippedModules('./presets/'), './index.mjs']) {
   })
 }
 
-console.log('check-dsh-021-contract: ok')
+console.log('check-dsh-022-contract: ok')

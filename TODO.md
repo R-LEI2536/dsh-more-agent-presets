@@ -3,7 +3,53 @@
 Future work tracked here. Items are recorded as discovered; revisit and resolve
 or remove them once a decision lands.
 
+## 2026-11-05：升级到 DSH 0.2.2-rc.1（1.9.0）
+
+> 本节是静态核对结果。本机宿主（`dsh --version`）仍是 `0.2.1-rc.5`，运行期验证待宿主升级后另案执行；
+> 所有结论以 `deepseek-harness-dsh-v0.2.2-rc.1` 源码快照为准，快照不是 git 仓库。
+
+- [x] **版本声明。** 23 个 `dependencies` + 2 个 `peerDependencies` 精确钉 `0.2.2-rc.1`；`engines.dsh` 从
+  `^0.2.1-rc.1` 抬到 `^0.2.2-rc.1`（两个新键在 0.2.1 线上不存在，旧宿主应被兼容门整包跳过而不是挂出 7 个坏 preset）；
+  `@deepseek-ai/cordis` / `cordis-plugin-loader` 的 peer 从 `~4.0.5` / `~1.0.6` 放宽到 `^4.0.5` / `^1.0.6`，
+  因为 0.2.2 vendor 是 cordis 4.1.0 + loader 1.1.0。
+- [x] **`list-agents` 子入口。** 5 个编程 preset 各删掉一行 `- id: tool-subagent-list-agents` +
+  `name: '@deepseek-ai/dsh-tool-subagent-control/list-agents'`。0.2.2 的 `tool-subagent-control` 已无该导出，
+  主入口同时注册 `send_message` / `interrupt_agent` / `list_agents`，所以删行等价、不丢工具；preset 提示词里
+  `list_agents` 的引用仍然成立。
+- [x] **配置键改名。** 6 处 `modelSelectionSettings: true` → `modelSelection: true` + `modelDiscovery: true`。
+  `modelDiscovery` 是保留旧行为（注册只读 `list_subagent_models`）的开关；同一 tool scope 只允许一个 owner。
+- [x] **`chat-subagent` 的 depth-0 目录 mask。** `restrict({ allow: [] })` → `restrict({ allow: ['subagent',
+  'list_subagent_models'] })`。依据：0.2.2-rc.1 删除了 `@deepseek-ai/dsh-tool-subagent` 的 per-Agent 安装
+  （`scopedInstalls` 整体消失），派活工具与 lister 改为注册在 preset 的 standing 层、被每个 Agent **继承**；
+  `tools.restrict()` 的 allow/deny 只对继承名生效，空 allow-list 会把两个派活名字一起藏掉。
+  这条是本轮指南没写、但代码 diff 必须改的一项。
+- [x] **Host 设置行不再是挂载依赖。** 旧版 `modelSelectionSettings: true` 在缺
+  `@deepseek-ai/dsh-tool-subagent/model-selection-settings` 时让整块 preset 挂载失败（旧源码有硬抛错）；0.2.2 不再抛错，
+  缺行时显式路由被限制在父会话路由、lister 回落到父路由。README / preset 头注释已按新语义改写。
+- [x] **§3 废弃 API grep。** `tool-subagent-control/list-agents`、`modelSelectionSettings`（live 配置）、
+  `maxParallelSubCalls`、`CodeRunFailedError`、`jsonSchemaToTs`、`assembly.tools`、`MenuTarget`/`ctx.menus`、
+  `dsh-invariants`、`dsh-deepseek-model-label-1017`：本仓库是纯声明式 preset bundle（无 host/client 代码面），
+  live 配置 0 命中；唯一命中是检查脚本与文档里对旧键的说明性引用。
+- [x] **门禁与检查。** 8 个 `check-*.mjs` 全绿（`check-dsh-021-contract.mjs` 改名并升级为
+  `check-dsh-022-contract.mjs`）；8 个 patch 用宿主自带的 `yaml` 解析通过；用宿主 rc.5 的
+  `evaluatePluginCompatibility` 以运行时 `0.2.2-rc.1` 实算：本清单 PASS，对照组（peer 精确 `0.2.1-rc.5`）被拒。
+- [ ] **后续（非本轮阻塞）：`sessionProjections.stateOf(session, key)` 在 0.2.2 已弃用。**
+  注册表仍提供它、但每个 key 会打一次弃用警告；本仓库有两处使用——`presets/shared/model-persona.mjs`
+  读会话模型选择状态、`presets/chat-subagent/delegator.mjs` 读授权路由策略。0.2.2 的新投影 API
+  （`register()` 返回 handle + `snapshot(session, keys)`）是迁移目标；本轮行为不变，另开一轮改。
+- [ ] **运行期验证（待宿主升级）。** 冷启动后确认 7 个 preset 全部出现、无 `disabling profile plugin row …`；
+  `chat-subagent` 顶层目录恰为 `subagent` + `list_subagent_models`；5 个编程 preset 的工具表含
+  `subagent` / `subagent_fork` / `list_agents` / `list_subagent_models`；各 preset 的提示词与自定义 `.mjs` 行正常挂载。
+- [ ] **旧缺陷记录复测后关闭。** 下面「已知的上游告警」「子 agent 模型选择」两节的 1.7.3–1.7.6 竞态与两行告警，
+  按 0.2.2 源码（无 per-Agent 安装、无 `scopedInstalls`、`list_subagent_models` 每个 scope 只注册一次）判断不会重现；
+  宿主升级后复测一次即可删除那些历史条目。
+
 ## 已知的上游告警（不是本插件缺陷）
+
+> **2026-11-05 更新（1.9.0，目标 0.2.2-rc.1）：** 0.2.2-rc.1 删除了 `@deepseek-ai/dsh-tool-subagent` 的
+> per-Agent 安装路径（旧树 `src/index.ts:454-481` 的 `scopedInstalls` / `installScoped` 在快照中已不存在），
+> 下面两行告警所依赖的注册路径与「切换丢工具」竞态按源码判断都不会再出现。保留本节作历史记录，
+> 宿主升级后复测确认即可删除。
 
 > **2026-10-19（1.8.0，目标 DSH 0.2.1-rc.2）：本节所有实测都发生在 0.2.0-rc.2 上，结论需在新宿主上复测后才可作废。**
 > 0.2.1 改动了与本节直接相关的两处代码：`@deepseek-ai/dsh-tool-subagent` 的 per-Agent 安装路径
@@ -14,7 +60,7 @@ or remove them once a decision lands.
 > 告警、`scopedInstalls` 缓存失败安装、以及「切换 preset 丢工具」的绕法都以当前实现为据——**绕法本身保留**
 > （行位置由 `check-subagent-model-selection.mjs` 钉死），但需在 0.2.1 上重测；上游修好后可把该行还原为顶层行。
 
-开了 `modelSelectionSettings`（5 个编程 preset + `chat-subagent`）之后，子 agent 被销毁时终端会出现下面两行。
+开了模型选择开关（5 个编程 preset + `chat-subagent`）之后，子 agent 被销毁时终端会出现下面两行。
 2026-10-17 在 dev_web 上核实：**没有功能影响**，不要把它们当成本插件的 bug。
 
 - `agent-registry agent "<child>": agent/disposed listener threw: TypeError: Cannot read
@@ -71,7 +117,7 @@ or remove them once a decision lands.
 - **开工清单（缺一不可）**：
   1. 新建 `presets/chat-subagent-durable.patch.yml`：自 `chat-subagent.patch.yml` 复制，改
      `id`/`order`/`name`/`description`。两条硬约束照抄：委派行必须仍包在 `cordis:group` 里（1.7.6 的撞名绕法，
-     行位置由 `check-subagent-model-selection.mjs` 钉死），`modelSelectionSettings: true` 保持。
+     行位置由 `check-subagent-model-selection.mjs` 钉死），`modelSelection: true` + `modelDiscovery: true` 保持。
   2. 挂上 `@deepseek-ai/dsh-tool-subagent-control`（注册 `send_message` + `list_agents`，见其
      `src/index.ts:29`、`list-agents.ts:87`）。先确认它在 web profile 下的挂法，以及是否必须与
      `tool-subagent` 同处一个 group。
@@ -87,10 +133,14 @@ or remove them once a decision lands.
   - `continuable` 子 agent 是**持久 session**（有 session 记录，落在 `~/.dsh/storages`），要定清理由谁负责
     （上游有 `drainContinuableChildren` / release 面）；别让聊天会话攒出一堆收不回来的子会话。
   - 后台起 = 顶层要轮询 / 收集，token 和提示词成本都上升。**先实测再决定是否随 release 发布**，不要先动版本号。
-  - 它会是第 7 个开 `modelSelectionSettings` 的 preset：切换顺序 / 名次假设要重测，`check-*.mjs` 要覆盖它。
+  - 它会是第 7 个开模型选择开关的 preset：切换顺序 / 名次假设要重测，`check-*.mjs` 要覆盖它。
 - **未定项**：preset id（暂用 `chat-subagent-durable`）、`order` 序号、中文显示名、是否两个 preset 并存给用户选。
 
 ## 子 agent 模型选择（6 个 preset）
+
+> **2026-11-05 更新（0.2.2-rc.1）：** 下面 1.7.3–1.7.6 的 per-Agent 竞态在 0.2.2-rc.1 已失去触发条件
+> （per-Agent 安装路径删除，`list_subagent_models` 每个 preset scope 只注册一次），`allow: []` 的目录 mask
+> 也随之改为两个名字的 allow-list。保留作历史记录，宿主升级后实测一次切换即可关闭本节。
 
 - **模型很少点名不等于开关坏了。** 省略 `provider`/`model`/`reasoning_effort` 就是官方默认（继承父会话），5 个编程
   preset 至今仍是如此：要让它们也「每次派活必须点名」，得逐个 preset 改派活段落的提示词——那是另一个决定，先看
@@ -128,10 +178,10 @@ or remove them once a decision lands.
     顺带把同函数 `removeScoped` 里的 `void fiber.dispose().catch(...)` 包成 `Promise.resolve(...)`（见上方已知告警）。
 - **我们的强制面不是这个缺陷的原因。** 强制面是 standing guard（`guard()` 不发 `tools/change`）；这条缺陷是官方 per-Agent
   安装自己的顺序问题，与我们的 guard 无关。**唯一会发 `tools/change` 的是 1.7.7 起加在 Agent 自身 scope 上的 depth-0 目录
-  mask（`restrict({ allow: [] })`），所以它刻意延后一个 macrotask 执行**，创建/切换 dispatch 里不产生任何本插件的
+  mask（`restrict({ allow: ['subagent', 'list_subagent_models'] })`），所以它刻意延后一个 macrotask 执行**，创建/切换 dispatch 里不产生任何本插件的
   `tools/change`；1.7.6 之前误判为“无法规避”，现在用行位置规避（上游修好后可还原为顶层行）。5 个编程 preset 只是恰好在该轮
   dispatch 里“拆在前、装在後”而没撞上。
-- **可选的整体回退**：删掉 6 个 preset spawn 行的 `modelSelectionSettings` 键（各一行）即可让所有 preset 都不会撞名，
+- **可选的整体回退**：删掉 6 个 preset spawn 行的 `modelSelection` / `modelDiscovery` 键（各两行）即可让所有 preset 都不会撞名，
   代价是失去路由参数与 `list_subagent_models`；`chat-subagent` 因此暂时不可用，是否回退由使用方决定。
 
 ## `codex-coding-agent` preset
